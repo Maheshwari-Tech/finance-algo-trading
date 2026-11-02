@@ -31,7 +31,7 @@ commands:
           name: Image name
           command: |
             OWNER=$(echo "${CIRCLE_PROJECT_USERNAME}" | tr '[:upper:]' '[:lower:]')
-            echo "export IMAGE=ghcr.io/${OWNER}/algo-trading" >> "$BASH_ENV"
+            echo "export IMAGE=ghcr.io/${OWNER}/finance-algo-trading" >> "$BASH_ENV"
 
 jobs:
   backend-test:

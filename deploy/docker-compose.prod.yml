@@ -5,7 +5,7 @@ name: algo-trading
 
 services:
   app:
-    image: ${APP_IMAGE:-ghcr.io/OWNER/algo-trading:latest}
+    image: ${APP_IMAGE:-ghcr.io/OWNER/finance-algo-trading:latest}
     restart: unless-stopped
     env_file: .env
     environment:
