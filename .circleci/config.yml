@@ -18,7 +18,7 @@ executors:
     docker: [{image: cimg/python:3.12}]
     resource_class: medium
   node:
-    docker: [{image: cimg/node:22.11}]
+    docker: [{image: cimg/node:current}]
     resource_class: medium
   base:
     docker: [{image: cimg/base:current}]
@@ -55,13 +55,13 @@ jobs:
       - run:
           name: Test
           command: |
-            mkdir -p test-results
-            cd backend && ../.venv/bin/pytest --junitxml=../test-results/junit.xml --cov=app --cov-report=term --cov-report=xml:../test-results/coverage.xml
+            mkdir -p test-results/junit
+            cd backend && ../.venv/bin/pytest --junitxml=../test-results/junit/junit.xml --cov=app --cov-report=term --cov-report=xml:../test-results/coverage.xml
       - run:
           name: Record resolved versions
           command: .venv/bin/pip freeze > test-results/requirements.lock.txt
           when: always
-      - store_test_results: {path: test-results}
+      - store_test_results: {path: test-results/junit}
       - store_artifacts: {path: test-results}
 
   frontend-build:
