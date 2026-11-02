@@ -1,0 +1,23 @@
+{
+  "trading_days_per_year": 252,
+  "var_percentile": 5,
+  "fee_grid_pct": [0, 0.05, 0.1, 0.25, 0.5, 1, 2],
+  "window_lengths": [1, 2, 3, 5, 7, 10, 15, 21, 30, 42, 63, 84, 126, 189, 252, 378, 504, 756, 1008, 1260],
+  "min_window_samples": 10,
+  "max_window_scan": 1260,
+  "majority_threshold": 0.5,
+  "histogram_bins": 31,
+  "histogram_clip_percentile": 99,
+  "periods": [
+    {"id": "1W", "offset": {"weeks": 1}},
+    {"id": "1M", "offset": {"months": 1}},
+    {"id": "3M", "offset": {"months": 3}},
+    {"id": "6M", "offset": {"months": 6}},
+    {"id": "YTD", "kind": "ytd"},
+    {"id": "1Y", "offset": {"years": 1}},
+    {"id": "2Y", "offset": {"years": 2}},
+    {"id": "3Y", "offset": {"years": 3}},
+    {"id": "5Y", "offset": {"years": 5}},
+    {"id": "MAX", "kind": "max"}
+  ]
+}

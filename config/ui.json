@@ -1,0 +1,33 @@
+{
+  "currency": {"symbol": "₹", "locale": "en-IN"},
+  "defaults": {
+    "strategy_id": "custom",
+    "period": "1Y",
+    "initial_capital": 0,
+    "charges_enabled": false,
+    "fee_pct": 1,
+    "allow_short": false,
+    "lots": 1,
+    "max_position": 10
+  },
+  "limits": {
+    "initial_capital": {"min": 0, "max": 1000000000000, "step": 100},
+    "fee_pct": {"min": 0, "max": 10, "step": 0.01},
+    "lots": {"min": 1, "max": 10000, "step": 1},
+    "max_position": {"min": 0, "max": 100000, "step": 1}
+  },
+  "thresholds": {
+    "good_sharpe": 0.5,
+    "good_win_rate": 0.5,
+    "deep_drawdown": 0.25,
+    "few_fills": 10,
+    "low_breakeven_fee_pct": 0.1,
+    "max_trade_log_rows": 200
+  },
+  "new_rule": {"action": "buy", "lots": 1, "match": "all", "conditions": []},
+  "new_condition": {
+    "buy": {"left": {"kind": "change_pct", "period": 1}, "op": "gt", "right": {"kind": "value", "value": 1}},
+    "sell": {"left": {"kind": "change_pct", "period": 1}, "op": "lt", "right": {"kind": "value", "value": -1}}
+  },
+  "initial_rule_set": "Buy 1% up, sell 1% down"
+}

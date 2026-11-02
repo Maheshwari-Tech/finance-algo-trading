@@ -1,0 +1,31 @@
+{
+  "operands": {
+    "price": {"label": "Price"},
+    "sma": {"label": "Simple moving average", "default_period": 20},
+    "ema": {"label": "Exponential moving average", "default_period": 20},
+    "rsi": {"label": "RSI", "default_period": 14},
+    "change_pct": {"label": "% change over N days", "default_period": 1},
+    "highest": {"label": "Highest high of last N days", "default_period": 20},
+    "lowest": {"label": "Lowest low of last N days", "default_period": 20},
+    "value": {"label": "Number"}
+  },
+  "operators": {
+    "gt": "is above",
+    "lt": "is below",
+    "crosses_above": "crosses above",
+    "crosses_below": "crosses below"
+  },
+  "price_fields": [
+    {"value": "close", "label": "Close"},
+    {"value": "open", "label": "Open"},
+    {"value": "high", "label": "High"},
+    {"value": "low", "label": "Low"},
+    {"value": "prev_close", "label": "Yesterday's close"}
+  ],
+  "limits": {
+    "period": {"min": 1, "max": 500, "step": 1},
+    "lots": {"min": 1, "max": 10000, "step": 1},
+    "rules": 10,
+    "conditions_per_rule": 8
+  }
+}

@@ -1,0 +1,54 @@
+groups:
+  - name: app
+    rules:
+      - alert: AppDown
+        expr: up{job="app"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "Backtest Lab is not responding to Prometheus"}
+
+      - alert: DatabaseUnreachable
+        expr: db_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "App readiness check cannot reach Postgres"}
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "More than 5% of requests are failing with 5xx"}
+
+      - alert: SlowApi
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{route!~"/api/backtest|/api/admin/datasets"}[5m]))) > 1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "p95 API latency above 1s (excluding backtests and uploads)"}
+
+      - alert: SlowBacktests
+        expr: histogram_quantile(0.95, sum by (le) (rate(backtest_duration_seconds_bucket[10m]))) > 10
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "p95 backtest time above 10s"}
+
+      - alert: FailedLoginSpike
+        expr: sum(increase(logins_total{outcome!="success"}[15m])) > 30
+        labels: {severity: warning}
+        annotations: {summary: "Many wrong sign-in codes in 15 minutes: possible guessing attack"}
+
+  - name: host
+    rules:
+      - alert: DiskAlmostFull
+        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.10
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Less than 10% disk left on the server"}
+
+      - alert: HighMemory
+        expr: 1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes > 0.9
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Server memory above 90%"}

@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: backtest-lab
+    folder: Backtest Lab
+    type: file
+    disableDeletion: true
+    options: {path: /var/lib/grafana/dashboards}

@@ -1,0 +1,165 @@
+version: 2.1
+
+# Pipeline: lint+test backend, build frontend -> build Docker image (push to GHCR on main) -> deploy to the VM over SSH.
+#
+# CircleCI contexts (Organization Settings > Contexts):
+#   ghcr        GHCR_USER   (your GitHub username)
+#               GHCR_TOKEN  (GitHub token with write:packages, read:packages)
+#   production  DEPLOY_HOST (server IP or hostname), DEPLOY_USER (SSH user)
+#               + the deploy SSH key added under Project Settings > SSH Keys (fingerprint in DEPLOY_SSH_FINGERPRINT below)
+
+parameters:
+  deploy_ssh_fingerprint:
+    type: string
+    default: "SHA256:REPLACE_WITH_YOUR_DEPLOY_KEY_FINGERPRINT"
+
+executors:
+  python:
+    docker: [{image: cimg/python:3.12}]
+    resource_class: medium
+  node:
+    docker: [{image: cimg/node:22.11}]
+    resource_class: medium
+  base:
+    docker: [{image: cimg/base:current}]
+    resource_class: medium
+
+commands:
+  image_name:
+    steps:
+      - run:
+          name: Image name
+          command: |
+            OWNER=$(echo "${CIRCLE_PROJECT_USERNAME}" | tr '[:upper:]' '[:lower:]')
+            echo "export IMAGE=ghcr.io/${OWNER}/algo-trading" >> "$BASH_ENV"
+
+jobs:
+  backend-test:
+    executor: python
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - pip-v1-{{ checksum "backend/requirements-dev.txt" }}-{{ checksum "backend/requirements.txt" }}
+      - run:
+          name: Install
+          command: |
+            python -m venv .venv
+            .venv/bin/pip install -q -r backend/requirements-dev.txt
+      - save_cache:
+          key: pip-v1-{{ checksum "backend/requirements-dev.txt" }}-{{ checksum "backend/requirements.txt" }}
+          paths: [.venv]
+      - run:
+          name: Lint
+          command: cd backend && ../.venv/bin/ruff check app tests
+      - run:
+          name: Test
+          command: |
+            mkdir -p test-results
+            cd backend && ../.venv/bin/pytest --junitxml=../test-results/junit.xml --cov=app --cov-report=term --cov-report=xml:../test-results/coverage.xml
+      - run:
+          name: Record resolved versions
+          command: .venv/bin/pip freeze > test-results/requirements.lock.txt
+          when: always
+      - store_test_results: {path: test-results}
+      - store_artifacts: {path: test-results}
+
+  frontend-build:
+    executor: node
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-v1-{{ checksum "frontend/package-lock.json" }}
+      - run: cd frontend && npm ci --no-audit --no-fund
+      - save_cache:
+          key: npm-v1-{{ checksum "frontend/package-lock.json" }}
+          paths: [~/.npm]
+      - run: cd frontend && npm run build
+
+  image:
+    executor: base
+    parameters:
+      push: {type: boolean, default: false}
+    steps:
+      - checkout
+      - setup_remote_docker: {docker_layer_caching: false}
+      - image_name
+      - run:
+          name: Build
+          command: docker build --build-arg GIT_SHA="${CIRCLE_SHA1}" -t "${IMAGE}:${CIRCLE_SHA1}" .
+      - run:
+          name: Smoke test the image
+          command: |
+            docker run -d --name smoke -e APP_ENV=development -e DATABASE_URL=sqlite:////tmp/smoke.db -e AUTO_CREATE_SCHEMA=true \
+              -e SECRET_KEY=smoke-test-secret-key-0123456789 -e ADMIN_MOBILES=9000000001 -e DEFAULT_COUNTRY_CODE=91 \
+              -e AUTH_MODE=dev -e OTP_DEV_CODE=482915 "${IMAGE}:${CIRCLE_SHA1}"
+            for i in $(seq 1 20); do
+              if docker exec smoke python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8123/api/ready')"; then
+                docker exec smoke python -c "import urllib.request;assert b'Backtest Lab' in urllib.request.urlopen('http://127.0.0.1:8123/').read()"
+                echo "image OK"; exit 0
+              fi
+              sleep 2
+            done
+            docker logs smoke; exit 1
+      - when:
+          condition: << parameters.push >>
+          steps:
+            - run:
+                name: Push to GHCR
+                command: |
+                  if [ -z "${GHCR_TOKEN:-}" ] || [ -z "${GHCR_USER:-}" ]; then
+                    echo "GHCR_USER/GHCR_TOKEN not set in the 'ghcr' context yet - skipping push."; exit 0
+                  fi
+                  echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+                  docker tag "${IMAGE}:${CIRCLE_SHA1}" "${IMAGE}:latest"
+                  docker push "${IMAGE}:${CIRCLE_SHA1}"
+                  docker push "${IMAGE}:latest"
+
+  deploy:
+    executor: base
+    steps:
+      - run:
+          name: Check deploy is configured
+          command: |
+            if [ -z "${DEPLOY_HOST:-}" ] || [ -z "${DEPLOY_USER:-}" ] || [ -z "${GHCR_TOKEN:-}" ]; then
+              echo "DEPLOY_HOST / DEPLOY_USER (context 'production') or GHCR_TOKEN (context 'ghcr') not set yet - skipping deploy."
+              circleci-agent step halt
+            fi
+      - checkout
+      - image_name
+      - add_ssh_keys:
+          fingerprints: ["<< pipeline.parameters.deploy_ssh_fingerprint >>"]
+      - run:
+          name: Trust server host key
+          command: mkdir -p ~/.ssh && ssh-keyscan -H "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+      - run:
+          name: Copy stack files (never .env)
+          command: |
+            ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "sudo mkdir -p /opt/algo-trading && sudo chown ${DEPLOY_USER} /opt/algo-trading"
+            tar -C deploy --exclude='.env' --exclude='.env.*' -czf - . | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "tar -C /opt/algo-trading -xzf -"
+      - run:
+          name: Deploy with rollback
+          command: |
+            ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "echo '${GHCR_TOKEN}' | docker login ghcr.io -u '${GHCR_USER}' --password-stdin >/dev/null && /opt/algo-trading/deploy.sh '${IMAGE}:${CIRCLE_SHA1}'"
+
+workflows:
+  ci-cd:
+    jobs:
+      - backend-test
+      - frontend-build
+      - image:
+          name: image-check
+          push: false
+          requires: [backend-test, frontend-build]
+          filters: {branches: {ignore: main}}
+      - image:
+          name: image-push
+          push: true
+          context: [ghcr]
+          requires: [backend-test, frontend-build]
+          filters: {branches: {only: main}}
+      - deploy:
+          context: [ghcr, production]
+          requires: [image-push]
+          filters: {branches: {only: main}}

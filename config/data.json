@@ -1,0 +1,10 @@
+{
+  "csv": {
+    "required_columns": ["date", "open", "high", "low", "close"],
+    "min_rows": 30,
+    "max_rows": 200000,
+    "max_upload_mb": 20
+  },
+  "symbol_pattern": "^[A-Z0-9._&-]{1,20}$",
+  "template_file": "prices_template.csv"
+}

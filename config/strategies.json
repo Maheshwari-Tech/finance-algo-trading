@@ -1,0 +1,51 @@
+{
+  "price_move": {
+    "name": "Market Direction",
+    "description": "Hold while the market is positive, step aside (or short) when negative - judged at the close.",
+    "params": [
+      {"key": "reference", "label": "Positive means close is above", "kind": "select", "default": "prev_close",
+       "options": [{"value": "prev_close", "label": "Yesterday's close"}, {"value": "open", "label": "Today's open"}]},
+      {"key": "threshold_pct", "label": "Ignore moves smaller than (%)", "kind": "float", "default": 0, "min": 0, "max": 10, "step": 0.05},
+      {"key": "mode", "label": "Style", "kind": "select", "default": "trend", "help": "Follow = buy strength. Fade = buy weakness.",
+       "options": [{"value": "trend", "label": "Follow the move"}, {"value": "contrarian", "label": "Fade the move"}]}
+    ]
+  },
+  "sma_cross": {
+    "name": "Moving Average Crossover",
+    "description": "Hold while the fast average is above the slow average.",
+    "params": [
+      {"key": "fast", "label": "Fast period", "kind": "int", "default": 10, "min": 2, "max": 200, "step": 1},
+      {"key": "slow", "label": "Slow period", "kind": "int", "default": 40, "min": 3, "max": 400, "step": 1},
+      {"key": "mode", "label": "Style", "kind": "select", "default": "trend",
+       "options": [{"value": "trend", "label": "Follow the move"}, {"value": "contrarian", "label": "Fade the move"}]}
+    ]
+  },
+  "rsi": {
+    "name": "RSI Reversal",
+    "description": "Buy when oversold, sell when overbought, hold in between.",
+    "params": [
+      {"key": "period", "label": "RSI period", "kind": "int", "default": 14, "min": 2, "max": 100, "step": 1},
+      {"key": "oversold", "label": "Buy below", "kind": "float", "default": 30, "min": 1, "max": 49, "step": 1},
+      {"key": "overbought", "label": "Sell above", "kind": "float", "default": 70, "min": 51, "max": 99, "step": 1}
+    ]
+  },
+  "breakout": {
+    "name": "Channel Breakout",
+    "description": "Buy new N-day highs, sell new N-day lows.",
+    "params": [{"key": "lookback", "label": "Lookback (days)", "kind": "int", "default": 20, "min": 2, "max": 250, "step": 1}]
+  },
+  "momentum": {
+    "name": "N-Day Momentum",
+    "description": "Hold when the last N days were positive, step aside when negative.",
+    "params": [
+      {"key": "lookback", "label": "Lookback (days)", "kind": "int", "default": 30, "min": 1, "max": 500, "step": 1},
+      {"key": "mode", "label": "Style", "kind": "select", "default": "trend",
+       "options": [{"value": "trend", "label": "Follow the move"}, {"value": "contrarian", "label": "Fade the move"}]}
+    ]
+  },
+  "buy_hold": {
+    "name": "Buy & Hold",
+    "description": "Buy on day one and never sell. The baseline to beat.",
+    "params": []
+  }
+}

@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+!.env.example
+.venv
+.idea
+.vscode
+**/__pycache__
+**/.pytest_cache
+frontend/node_modules
+frontend/dist
+backend/tests
+deploy
+.circleci
+*.db
+var

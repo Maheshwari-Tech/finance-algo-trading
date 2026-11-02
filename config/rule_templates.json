@@ -1,0 +1,25 @@
+[
+  {"name": "Buy 1% up, sell 1% down", "rules": [
+    {"action": "buy", "lots": 1, "match": "all", "conditions": [{"left": {"kind": "change_pct", "period": 1}, "op": "gt", "right": {"kind": "value", "value": 1}}]},
+    {"action": "sell", "lots": 1, "match": "all", "conditions": [{"left": {"kind": "change_pct", "period": 1}, "op": "lt", "right": {"kind": "value", "value": -1}}]}
+  ]},
+  {"name": "Buy the dip, sell the rip", "rules": [
+    {"action": "buy", "lots": 1, "match": "all", "conditions": [{"left": {"kind": "change_pct", "period": 1}, "op": "lt", "right": {"kind": "value", "value": -2}}]},
+    {"action": "sell", "lots": 1, "match": "all", "conditions": [{"left": {"kind": "change_pct", "period": 1}, "op": "gt", "right": {"kind": "value", "value": 2}}]}
+  ]},
+  {"name": "Golden cross", "rules": [
+    {"action": "buy", "lots": 1, "match": "all", "conditions": [{"left": {"kind": "sma", "period": 50}, "op": "crosses_above", "right": {"kind": "sma", "period": 200}}]},
+    {"action": "sell", "lots": 1, "match": "all", "conditions": [{"left": {"kind": "sma", "period": 50}, "op": "crosses_below", "right": {"kind": "sma", "period": 200}}]}
+  ]},
+  {"name": "Oversold buyer in an uptrend", "rules": [
+    {"action": "buy", "lots": 2, "match": "all", "conditions": [
+      {"left": {"kind": "price", "field": "close"}, "op": "gt", "right": {"kind": "sma", "period": 100}},
+      {"left": {"kind": "rsi", "period": 14}, "op": "lt", "right": {"kind": "value", "value": 35}}]},
+    {"action": "sell", "lots": 2, "match": "any", "conditions": [
+      {"left": {"kind": "rsi", "period": 14}, "op": "gt", "right": {"kind": "value", "value": 65}},
+      {"left": {"kind": "price", "field": "close"}, "op": "lt", "right": {"kind": "sma", "period": 100}}]}
+  ]},
+  {"name": "Buy every day (average in)", "rules": [
+    {"action": "buy", "lots": 1, "match": "all", "conditions": []}
+  ]}
+]
