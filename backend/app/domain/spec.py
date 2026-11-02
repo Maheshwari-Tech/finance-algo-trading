@@ -18,6 +18,8 @@ class BacktestSpec:
     allow_short: bool = False
     lots: int = 1  # position size for built-in strategies
     max_position: int = 0
+    limit_to_cash: bool = False  # cash can't go below 0
+    invert: bool = False  # run the mirror strategy
     period: Optional[str] = "MAX"
     start: Optional[date] = None
     end: Optional[date] = None

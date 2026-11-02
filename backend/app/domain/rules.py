@@ -11,6 +11,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 
 from ..config import ConfigError
+from .engine import Plan
 from .strategies import indicators as ind
 from .strategies.base import Strategy
 
@@ -96,12 +97,23 @@ class Condition(BaseModel):
         return OPERATORS[self.op](a, b).fillna(False) & a.notna() & b.notna()
 
 
+WHEN = {"every_day", "becomes_true"}
+
+
 class TradeRule(BaseModel):
     """One order instruction: <action> <lots> when <conditions>. No conditions means every day."""
     action: str
     lots: int = Field(1, ge=1, le=10_000)
     match: str = "all"
+    when: str = "every_day"  # "every_day": act on every day the conditions hold; "becomes_true": only on the first such day
     conditions: List[Condition] = Field(default_factory=list, max_length=8)
+
+    @field_validator("when")
+    @classmethod
+    def _when(cls, v: str) -> str:
+        if v not in WHEN:
+            raise ValueError(f"when must be one of {sorted(WHEN)}")
+        return v
 
     @field_validator("action")
     @classmethod
@@ -117,11 +129,19 @@ class TradeRule(BaseModel):
             raise ValueError("match must be 'all' or 'any'")
         return v
 
-    def fires(self, bars: Bars) -> pd.Series:
+    def holds(self, bars: Bars) -> pd.Series:
+        """True on every day the conditions are met."""
         if not self.conditions:
             return pd.Series(True, index=bars.index)
         hits = pd.concat([c.evaluate(bars) for c in self.conditions], axis=1)
         return hits.all(axis=1) if self.match == "all" else hits.any(axis=1)
+
+    def fires(self, bars: Bars) -> pd.Series:
+        """Days this rule places its order. Evaluated on the full history, so 'becomes true' is known at the window start."""
+        held = self.holds(bars)
+        if self.when == "becomes_true":
+            return held & ~held.shift(1, fill_value=False)
+        return held
 
     @property
     def signed_lots(self) -> int:
@@ -151,6 +171,60 @@ class CustomRulesStrategy(Strategy):
             total += rule.fires(bars).astype(float) * rule.signed_lots
         return total.loc[start:]
 
+    def plan(self, bars: Bars, params, ctx, start: pd.Timestamp) -> Plan:
+        """Net lots to buy/sell per bar, with the rules that fired and the values they compared."""
+        window = bars.index[bars.index >= start]
+        total = pd.Series(0.0, index=window)
+        texts = {d: [] for d in window}
+        for n, rule in enumerate(self.rules.rules, 1):
+            fired = rule.fires(bars).loc[window]
+            if not fired.any():
+                continue
+            evaluated = [(c, c.left.evaluate(bars), c.right.evaluate(bars)) for c in rule.conditions]
+            total += fired.astype(float) * rule.signed_lots
+            joiner = " AND " if rule.match == "all" else " OR "
+            for d in fired.index[fired.to_numpy()]:
+                if evaluated:
+                    i = bars.index.get_loc(d)
+                    parts = [_explain(c, a, b, i, rule.match == "any") for c, a, b in evaluated]
+                    why = joiner.join(p for p in parts if p)
+                else:
+                    why = "no conditions (every day)"
+                first = " (first day true)" if rule.when == "becomes_true" else ""
+                texts[d].append(f"Rule {n} {rule.action.upper()} {rule.lots}{first}: {why}")
+        reasons = pd.Series(["; ".join(texts[d]) for d in window], index=window, dtype=object)
+        return Plan("delta", total, reasons)
+
+
+OP_TEXT = {"gt": ">", "lt": "<", "crosses_above": "crossed above", "crosses_below": "crossed below"}
+
+
+def operand_label(o: OperandSpec) -> str:
+    if o.kind == "value":
+        return f"{o.value:g}"
+    if o.kind == "price":
+        return {"prev_close": "Yesterday's close"}.get(o.field or "close", (o.field or "close").capitalize())
+    names = {"sma": "SMA({p})", "ema": "EMA({p})", "rsi": "RSI({p})", "change_pct": "{p}-day change %",
+             "highest": "{p}-day high", "lowest": "{p}-day low"}
+    return names.get(o.kind, o.kind).format(p=o.period)
+
+
+def _num(v: float) -> str:
+    return "n/a" if pd.isna(v) else f"{float(v):,.2f}"
+
+
+def _explain(c: Condition, a: pd.Series, b: pd.Series, i: int, only_true: bool) -> str:
+    """Text for one condition at bar i, with the actual values. With 'any' matching only the true ones are listed."""
+    hit = bool(OPERATORS[c.op](a, b).iloc[i]) and pd.notna(a.iloc[i]) and pd.notna(b.iloc[i])
+    if only_true and not hit:
+        return ""
+    left = f"{operand_label(c.left)} {_num(a.iloc[i])}" if c.left.kind != "value" else operand_label(c.left)
+    right = f"{operand_label(c.right)} {_num(b.iloc[i])}" if c.right.kind != "value" else operand_label(c.right)
+    text = f"{left} {OP_TEXT[c.op]} {right}"
+    if c.op.startswith("crosses") and i > 0:
+        text += f" (yesterday {_num(a.iloc[i - 1])} vs {_num(b.iloc[i - 1])})"
+    return text
+
 
 def builder_catalog(cfg: dict) -> dict:
     """Merge computation capabilities (code) with labels/defaults (config/rule_builder.json)."""
@@ -163,5 +237,6 @@ def builder_catalog(cfg: dict) -> dict:
                      for o in OPERANDS.values()],
         "price_fields": [f for f in cfg["price_fields"] if f["value"] in PRICE_FIELDS],
         "operators": [{"value": k, "label": v} for k, v in ops.items()],
+        "when": [w for w in cfg["when"] if w["value"] in WHEN],
         "limits": cfg["limits"],
     }

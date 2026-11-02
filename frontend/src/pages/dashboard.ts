@@ -4,7 +4,8 @@ import { PANELS } from "../charts";
 import { Controls } from "../components/controls";
 import { insights } from "../components/insights";
 import { heroCards, metricGroups } from "../components/metrics";
-import { tradesTable } from "../components/tradesTable";
+import { ledgerPanel } from "../components/ledger";
+import { pnlSummary } from "../components/pnl";
 import { h } from "../lib/dom";
 import { ui } from "../lib/uiConfig";
 
@@ -49,7 +50,7 @@ export async function dashboardPage(root: HTMLElement): Promise<void> {
     results.replaceChildren(
       h("div", { class: "results-head" },
         h("div", {}, h("h1", {}, `${r.strategy_name} on ${r.symbol}`), h("p", { class: "sub" }, `${r.start} → ${r.end} · ${r.bars.toLocaleString()} trading days`))),
-      heroCards(r.metrics, t), insights(r, t), grid, metricGroups(r.metrics, t), tradesTable(r.trades, t.max_trade_log_rows));
+      pnlSummary(r), heroCards(r.metrics, t), ledgerPanel(r, t.page_size), insights(r, t), grid, metricGroups(r.metrics, t));
   }
 
   await run(controls.request);

@@ -20,6 +20,8 @@ class BacktestRequest(BaseModel):
     allow_short: bool = Field(False, description="Allow selling before buying")
     lots: int = Field(1, ge=1, le=10_000, description="Lots per position for built-in strategies")
     max_position: int = Field(0, ge=0, le=100_000, description="Max lots held on either side; 0 = unlimited")
+    limit_to_cash: bool = Field(False, description="Cash can't go below 0: buys are cut to what cash can pay for")
+    invert: bool = Field(False, description="Run the inverse strategy: every buy becomes a sell and vice versa")
     period: Optional[str] = Field("MAX", description="1W, 1M, 3M, 6M, YTD, 1Y, 2Y, 3Y, 5Y, MAX")
     start: Optional[date] = None
     end: Optional[date] = None
@@ -29,6 +31,7 @@ class BacktestRequest(BaseModel):
             symbol=self.symbol, strategy_id=self.strategy_id, params=self.params, rules=self.rules,
             initial_capital=self.initial_capital, fee_pct=self.fee_pct if self.charges_enabled else 0.0,
             allow_short=self.allow_short, lots=self.lots, max_position=self.max_position,
+            limit_to_cash=self.limit_to_cash, invert=self.invert,
             period=self.period, start=self.start, end=self.end)
 
 

@@ -12,6 +12,7 @@ export type ParamValues = Record<string, number | string>;
 export interface BacktestRequest {
   symbol: string; strategy_id: string; rules?: RuleSet; params: ParamValues; initial_capital: number;
   charges_enabled: boolean; fee_pct: number; allow_short: boolean; lots: number; max_position: number;
+  limit_to_cash: boolean; invert: boolean;
   period?: string; start?: string; end?: string;
 }
 
@@ -22,8 +23,10 @@ export interface CapitalPoint { value: number; date: string }
 export interface Metrics {
   initial_capital: number; return_base: number; final_equity: number;
   min_cash: CapitalPoint; max_cash: CapitalPoint; peak_equity: CapitalPoint; lowest_equity: CapitalPoint;
-  max_cash_invested: number; max_exposure: number; final_position: number;
-  total_profit: number; total_return: number; cagr: number;
+  max_cash_invested: number; max_exposure: number; final_position: number; final_avg_price: number;
+  peak_position_cost: number; peak_cash_in: number;
+  total_profit: number; realized_pnl: number; unrealized_pnl: number;
+  return_on_position_cost: number; return_on_cash: number | null; total_return: number; cagr: number;
   gross_profit: number; gross_loss: number; fees_paid: number; fee_drag: number;
   benchmark_return: number; alpha: number;
   volatility: number; sharpe: number; sortino: number; calmar: number;
@@ -37,9 +40,22 @@ export interface Metrics {
 }
 
 export interface Trade {
-  side: "long" | "short"; qty: number; entry_date: string; exit_date: string; entry_price: number; exit_price: number;
-  bars: number; days: number; return_pct: number; pnl: number; is_open: boolean;
+  id: number; side: "long" | "short"; qty: number; entry_date: string; exit_date: string; entry_price: number; exit_price: number;
+  bars: number; days: number; invested: number; realized: number; unrealized: number; fees: number; pnl: number;
+  return_pct: number; first_order: number; last_order: number; orders: number; is_open: boolean;
 }
+export interface Order {
+  no: number; date: string; week: string; action: "buy" | "sell"; requested: number; filled: number; price: number; value: number; fee: number;
+  cash_before: number; cash_after: number; position_before: number; position_after: number; avg_price_after: number;
+  realized: number; realized_total: number; unrealized_after: number; equity_after: number; trade_id: number | null; note: string; reason: string;
+}
+export interface WeekRow {
+  week_start: string; week_end: string; buys: number; sells: number; skipped: number; bought_lots: number; sold_lots: number;
+  buy_value: number; sell_value: number; fees: number; realized: number; position_end: number; avg_price_end: number; close_end: number;
+  cash_end: number; unrealized_end: number; equity_end: number; equity_change: number;
+}
+export interface Check { name: string; ok: boolean; detail: string }
+export interface MirrorCheck { exact: boolean; strategy_profit: number; inverse_profit: number; total: number; charges: number; ok: boolean; note: string }
 export interface WindowStat {
   bars: number; pct_profitable: number; avg_return: number; median_return: number;
   best_return: number; worst_return: number; samples: number;
@@ -59,22 +75,25 @@ export interface BacktestResult {
   start: string; end: string; bars: number; metrics: Metrics; series: Series; trades: Trade[];
   monthly: { year: number; month: number; value: number }[];
   windows: WindowAnalysis; fees: FeeSensitivity; return_histogram: { edges: number[]; counts: number[] };
+  orders: Order[]; weekly: WeekRow[]; checks: Check[]; mirror: MirrorCheck; inverted: boolean;
+  settings: Record<string, string | number | boolean>;
 }
 
 export interface OperandSpec { kind: string; period?: number; value?: number; field?: string }
 export interface Condition { left: OperandSpec; op: string; right: OperandSpec }
-export interface TradeRule { action: "buy" | "sell"; lots: number; match: "all" | "any"; conditions: Condition[] }
+export interface TradeRule { action: "buy" | "sell"; lots: number; match: "all" | "any"; when?: "every_day" | "becomes_true"; conditions: Condition[] }
 export interface RuleSet { name: string; rules: TradeRule[] }
 
 export interface OperandInfo { kind: string; label: string; uses_period: boolean; default_period: number | null; uses_field: boolean; uses_value: boolean }
 export interface BuilderCatalog {
   operands: OperandInfo[]; price_fields: { value: string; label: string }[]; operators: { value: string; label: string }[];
+  when: { value: string; label: string }[];
   limits: { period: Range; lots: Range; rules: number; conditions_per_rule: number };
 }
 export interface Range { min: number; max: number; step?: number }
 
 export interface Thresholds {
-  good_sharpe: number; good_win_rate: number; deep_drawdown: number; few_fills: number; low_breakeven_fee_pct: number; max_trade_log_rows: number;
+  good_sharpe: number; good_win_rate: number; deep_drawdown: number; few_fills: number; low_breakeven_fee_pct: number; max_trade_log_rows: number; page_size: number;
 }
 export interface UiConfig {
   currency: { symbol: string; locale: string };

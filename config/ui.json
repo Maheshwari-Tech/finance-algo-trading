@@ -8,7 +8,9 @@
     "fee_pct": 1,
     "allow_short": false,
     "lots": 1,
-    "max_position": 10
+    "max_position": 10,
+    "limit_to_cash": false,
+    "invert": false
   },
   "limits": {
     "initial_capital": {"min": 0, "max": 1000000000000, "step": 100},
@@ -22,9 +24,10 @@
     "deep_drawdown": 0.25,
     "few_fills": 10,
     "low_breakeven_fee_pct": 0.1,
-    "max_trade_log_rows": 200
+    "max_trade_log_rows": 200,
+    "page_size": 50
   },
-  "new_rule": {"action": "buy", "lots": 1, "match": "all", "conditions": []},
+  "new_rule": {"action": "buy", "lots": 1, "match": "all", "when": "every_day", "conditions": []},
   "new_condition": {
     "buy": {"left": {"kind": "change_pct", "period": 1}, "op": "gt", "right": {"kind": "value", "value": 1}},
     "sell": {"left": {"kind": "change_pct", "period": 1}, "op": "lt", "right": {"kind": "value", "value": -1}}

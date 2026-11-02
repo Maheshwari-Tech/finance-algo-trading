@@ -48,12 +48,14 @@ def test_sell_before_buy_toggle():
     assert short.trades[0].side == "short" and short.trades[0].is_open
 
 
-def test_max_position_and_fifo():
+def test_max_position_and_average_cost():
     sim = run([10, 11, 12, 13], [1, 1, 1, -1], max_position=2)
     assert sim.frame["position"].tolist() == [1, 2, 2, 1]
-    assert [t.entry_date for t in sim.trades][0] < [t.entry_date for t in sim.trades][1]
-    closed = [t for t in sim.trades if not t.is_open]
-    assert len(closed) == 1 and closed[0].pnl == pytest.approx(3)  # first lot bought at 10, sold at 13
+    # Average cost: bought at 10 and 11 -> average 10.50. Selling 1 at 13 realises 13 - 10.50 = 2.50; 1 lot stays open at 10.50.
+    assert sim.frame["realized_cum"].iloc[-1] == pytest.approx(2.5)
+    assert sim.frame["avg_price"].iloc[-1] == pytest.approx(10.5)
+    (trade,) = sim.trades  # the position never returns to 0, so it is one open trade
+    assert trade.is_open and trade.pnl == pytest.approx(2.5 + (13 - 10.5))
 
 
 def test_always_profitable_window_on_uptrend():

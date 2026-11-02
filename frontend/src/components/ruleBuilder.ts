@@ -40,7 +40,8 @@ export class RuleBuilder {
     return this.rules.rules.map((r) => {
       const cond = r.conditions.length ? r.conditions.map((c) => this.describe(c)).join(r.match === "all" ? " and " : " or ") : "every day";
       return h("p", { class: r.action === "buy" ? "buy-text" : "sell-text" },
-        h("b", {}, `${r.action === "buy" ? "Buy" : "Sell"} ${r.lots} lot${r.lots === 1 ? "" : "s"}`), r.conditions.length ? " when " : " ", cond);
+        h("b", {}, `${r.action === "buy" ? "Buy" : "Sell"} ${r.lots} lot${r.lots === 1 ? "" : "s"}`), r.conditions.length ? " when " : " ", cond,
+        r.conditions.length ? (r.when === "becomes_true" ? " (once, on the first day it becomes true)" : " (every day it is true)") : "");
     });
   }
 
@@ -71,11 +72,15 @@ export class RuleBuilder {
     const match = h("select", { class: "inline", on: { change: (e) => { r.match = (e.target as HTMLSelectElement).value as "all" | "any"; this.refreshPreview(); this.changed(); } } },
       h("option", { value: "all", selected: r.match === "all" }, "all"), h("option", { value: "any", selected: r.match === "any" }, "any"));
 
+    const when = h("select", { class: "inline", title: "Every day the conditions hold, or only on the first day they become true", on: { change: (e) => {
+      r.when = (e.target as HTMLSelectElement).value as "every_day" | "becomes_true"; this.refreshPreview(); this.changed();
+    } } }, this.catalog.when.map((w) => h("option", { value: w.value, selected: w.value === (r.when ?? "every_day") }, w.label)));
+
     return h("section", { class: `group ${r.action}` },
       h("div", { class: "group-head" }, action, lots, h("span", { class: "sub" }, "lot(s)"),
         h("button", { type: "button", class: "icon-btn push", title: "Remove rule", on: { click: () => { this.rules.rules.splice(index, 1); this.structural(); } } }, "×")),
       r.conditions.length
-        ? h("div", { class: "group-sub" }, h("span", { class: "sub" }, "when"), match, h("span", { class: "sub" }, "of these are true"))
+        ? h("div", { class: "group-sub" }, h("span", { class: "sub" }, "when"), match, h("span", { class: "sub" }, "of these are true,"), when)
         : h("p", { class: "hint tight" }, "No condition: this order is placed every day."),
       ...r.conditions.map((c, i) => this.conditionRow(r, c, i)),
       h("button", { type: "button", class: "btn ghost add", on: { click: () => {

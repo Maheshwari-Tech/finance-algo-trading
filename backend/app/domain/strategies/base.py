@@ -13,6 +13,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from ..engine import Plan
+
+
+def _fmt(v) -> str:
+    return "n/a" if pd.isna(v) else f"{float(v):,.2f}"
+
 
 @dataclass(frozen=True)
 class ParamSpec:
@@ -66,15 +72,41 @@ class Strategy(ABC):
     def signal(self, bars: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
         """Return a Series (indexed like `bars`) of +1 / -1 / 0."""
 
-    def orders(self, bars: pd.DataFrame, params: Dict[str, Any], ctx: OrderContext, start: pd.Timestamp) -> pd.Series:
-        """Quantity to buy (+) / sell (-) at each close from `start` on.
+    def indicators(self, bars: pd.DataFrame, params: Dict[str, Any]) -> Dict[str, pd.Series]:
+        """Values shown in each order's reason, e.g. {"SMA(10)": series}. Override per strategy."""
+        return {}
 
-        Signal strategies hold `ctx.lots` lots while bullish; the first order enters the already-active state.
-        """
+    def target(self, bars: pd.DataFrame, params: Dict[str, Any], ctx: OrderContext) -> pd.Series:
+        """Lots the strategy wants to hold after each close: +lots while bullish, -lots (or 0 without shorting) while bearish."""
         state = self.signal(bars, params).replace(0, np.nan).ffill().fillna(0)
         if not ctx.allow_short:
             state = state.clip(lower=0)
-        target = (state * ctx.lots).loc[start:]
+        return state * ctx.lots
+
+    def plan(self, bars: pd.DataFrame, params: Dict[str, Any], ctx: OrderContext, start: pd.Timestamp) -> Plan:
+        """Target holding per bar from `start` on, with a reason on every bar where the target changes.
+
+        Indicators use the full history, so they are warmed up before `start`.
+        """
+        raw = self.signal(bars, params)
+        target = self.target(bars, params, ctx)
+        ind = self.indicators(bars, params)
+        window = target.loc[start:]
+        prev = window.shift(1)
+        reasons = pd.Series("", index=window.index, dtype=object)
+        for i, d in enumerate(window.index):
+            if (i == 0 and window.iloc[0] != 0) or (i > 0 and window.iloc[i] != prev.iloc[i]):
+                sig = raw.loc[d]
+                mood = "bullish" if sig > 0 else "bearish" if sig < 0 else "no new signal (carried over)"
+                vals = ", ".join(f"{k} = {_fmt(v.loc[d])}" for k, v in ind.items())
+                start_note = "Signal already active when the period starts. " if i == 0 else ""
+                was = 0 if i == 0 else prev.iloc[i]
+                reasons.iloc[i] = f"{start_note}Signal {mood}{': ' + vals if vals else ''}. Target holding {was:g} -> {window.iloc[i]:g} lots."
+        return Plan("target", window, reasons)
+
+    def orders(self, bars: pd.DataFrame, params: Dict[str, Any], ctx: OrderContext, start: pd.Timestamp) -> pd.Series:
+        """Quantity to buy (+) / sell (-) at each close from `start` on, if every order fills in full."""
+        target = self.target(bars, params, ctx).loc[start:]
         return target.diff().fillna(target.iloc[0])
 
     def describe(self) -> Dict[str, Any]:

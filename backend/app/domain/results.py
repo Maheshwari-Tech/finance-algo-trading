@@ -7,17 +7,88 @@ from pydantic import BaseModel
 
 
 class Trade(BaseModel):
+    """One position cycle: from holding 0 lots until back to 0 (or until it flips side). Average-cost accounting."""
+    id: int
     side: str  # "long" | "short"
-    qty: float
+    qty: float  # most lots held during the trade
     entry_date: str
-    exit_date: str
-    entry_price: float
-    exit_price: float
+    exit_date: str  # last close of the window when still open
+    entry_price: float  # average price of the orders that opened/added
+    exit_price: float  # average price of the orders that reduced/closed (last close when still open)
     bars: int
     days: int
-    return_pct: float  # net of fees, fraction
-    pnl: float  # currency, net of fees
+    invested: float  # most money held in this position at entry price
+    realized: float  # before charges
+    unrealized: float  # open part, valued at the last close
+    fees: float
+    pnl: float  # realized + unrealized - fees
+    return_pct: float  # pnl / invested, fraction
+    first_order: int
+    last_order: int
+    orders: int
     is_open: bool = False
+
+
+class Order(BaseModel):
+    """One requested order. Every row satisfies: cash_after = cash_before - filled * price - fee."""
+    no: int
+    date: str
+    week: str  # Monday of the week (YYYY-MM-DD)
+    action: str  # "buy" | "sell"
+    requested: float  # signed lots asked for by the strategy
+    filled: float  # signed lots actually traded (0 = skipped)
+    price: float
+    value: float  # |filled| * price
+    fee: float
+    cash_before: float
+    cash_after: float
+    position_before: float
+    position_after: float
+    avg_price_after: float
+    realized: float  # realised P&L of this order, before charges
+    realized_total: float
+    unrealized_after: float  # open P&L at this close
+    equity_after: float  # cash_after + position_after * price
+    trade_id: Optional[int] = None
+    note: str = ""  # why it was cut or skipped
+    reason: str = ""  # why the strategy asked for it
+
+
+class WeekRow(BaseModel):
+    week_start: str  # Monday
+    week_end: str  # last trading day in the window that week
+    buys: int
+    sells: int
+    skipped: int
+    bought_lots: float
+    sold_lots: float
+    buy_value: float
+    sell_value: float
+    fees: float
+    realized: float
+    position_end: float
+    avg_price_end: float
+    close_end: float
+    cash_end: float
+    unrealized_end: float
+    equity_end: float
+    equity_change: float
+
+
+class Check(BaseModel):
+    name: str
+    ok: bool
+    detail: str
+
+
+class MirrorCheck(BaseModel):
+    exact: bool  # True when no limit can block one side differently from the other
+    strategy_profit: float
+    inverse_profit: float
+    total: float
+    charges: float  # charges of both runs
+    ok: bool
+    note: str
 
 
 class DateWindow(BaseModel):
@@ -36,7 +107,7 @@ class CapitalPoint(BaseModel):
 class Metrics(BaseModel):
     # Capital (currency)
     initial_capital: float
-    return_base: float  # what percentages are measured against: initial capital, or peak exposure if you start with 0
+    return_base: float  # what other % figures are measured against: peak money in positions at entry price
     final_equity: float
     min_cash: CapitalPoint  # most negative (or lowest) cash balance
     max_cash: CapitalPoint  # highest cash balance
@@ -45,9 +116,16 @@ class Metrics(BaseModel):
     max_cash_invested: float  # most cash you had put in at once (initial capital - min cash)
     max_exposure: float  # largest value of holdings at once
     final_position: float
+    final_avg_price: float
+    peak_position_cost: float  # most money ever held in positions, at entry price (longs + shorts)
+    peak_cash_in: float  # most cash ever drawn from the account (starting capital - lowest cash)
     # Profit
-    total_profit: float
-    total_return: float
+    total_profit: float  # = realized_pnl + unrealized_pnl - fees_paid = final_equity - initial_capital
+    realized_pnl: float  # closed positions, average cost, before charges
+    unrealized_pnl: float  # open position valued at the last close
+    return_on_position_cost: float  # total_profit / peak_position_cost
+    return_on_cash: Optional[float]  # total_profit / peak_cash_in (None when no cash was drawn)
+    total_return: float  # same as return_on_position_cost
     cagr: float
     gross_profit: float
     gross_loss: float
@@ -159,3 +237,9 @@ class BacktestResult(BaseModel):
     windows: WindowAnalysis
     fees: FeeSensitivity
     return_histogram: Dict[str, List[float]]
+    orders: List[Order]
+    weekly: List[WeekRow]
+    checks: List[Check]
+    mirror: MirrorCheck
+    inverted: bool
+    settings: Dict[str, object]

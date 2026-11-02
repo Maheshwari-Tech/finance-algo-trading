@@ -152,3 +152,42 @@ input.otp { letter-spacing: .5em; text-align: center; font-size: 1.3rem; font-fa
 .dev-note { font-size: .76rem; color: #fbbf24; background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.25); padding: 8px 10px; border-radius: 10px; margin-bottom: 12px; }
 .who { color: var(--muted); font-size: .82rem; padding: 0 10px; align-self: center; } nav { align-items: center; }
 .btn.block { width: 100%; margin-top: 10px; }
+
+/* ---- Rule picker: "Build your own" stands apart from the built-in strategies ---- */
+.rule-select optgroup { color: var(--muted); font-style: normal; }
+.rule-select option { color: var(--text); background: #11141f; }
+.rule-select .custom-option { color: var(--accent2); font-weight: 700; }
+.rule-select.custom-picked { color: var(--accent2); font-weight: 700; border-color: rgba(55,214,197,.55); background: rgba(55,214,197,.08); }
+
+/* ---- How the profit adds up ---- */
+.pnl-summary .equation { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.pnl-summary .term { flex: 1 1 140px; background: rgba(0,0,0,.22); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.pnl-summary .term span { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; }
+.pnl-summary .term strong { font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+.pnl-summary .op { align-self: center; color: var(--muted); font-size: 1.2rem; font-weight: 600; }
+.pnl-summary > .hint { margin-top: 10px; }
+.pnl-summary .invested { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; margin-top: 12px; }
+.pnl-summary .invested div { display: flex; flex-direction: column; gap: 3px; background: rgba(0,0,0,.18); border-radius: 12px; padding: 10px 12px; }
+.pnl-summary .invested span { color: var(--muted); font-size: .75rem; } .pnl-summary .invested em { font-style: normal; font-size: .82rem; }
+.settings-line { margin-top: 10px; }
+.check-badge { font-size: .78rem; font-weight: 600; padding: 4px 10px; border-radius: 99px; text-decoration: none; }
+.check-badge.ok { color: var(--up); background: rgba(52,211,153,.12); } .check-badge.bad { color: var(--down); background: rgba(251,113,133,.14); }
+
+/* ---- Orders / weekly / trades / checks ---- */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.table-tools { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 8px; }
+.pager { display: flex; gap: 4px; flex-wrap: wrap; }
+.pager .btn:disabled { opacity: .35; cursor: default; }
+.inline-check { display: flex; align-items: center; gap: 8px; font-size: .82rem; color: var(--muted); }
+.inline-check input { width: auto; }
+.filter-chip { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; background: rgba(124,140,255,.14); color: var(--text); padding: 2px 4px 2px 10px; border-radius: 99px; }
+table.ledger td { white-space: nowrap; }
+table.ledger td.small { font-size: .76rem; color: var(--muted); white-space: normal; min-width: 180px; }
+table.ledger td.reason { min-width: 320px; }
+table.ledger td.warn, table.ledger td.warn.small { color: #fbbf24; }
+table.ledger tr.clickable { cursor: pointer; } table.ledger tr.clickable:hover td { background: rgba(124,140,255,.08); }
+ul.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+ul.checks li { display: flex; gap: 12px; align-items: flex-start; background: rgba(0,0,0,.18); border-radius: 12px; padding: 10px 12px; }
+ul.checks li div { display: flex; flex-direction: column; gap: 2px; } ul.checks small { color: var(--muted); }
+ul.checks .mark { font-weight: 700; width: 18px; text-align: center; }
+ul.checks li.ok .mark { color: var(--up); } ul.checks li.bad .mark { color: var(--down); } ul.checks li.info .mark { color: var(--accent); }

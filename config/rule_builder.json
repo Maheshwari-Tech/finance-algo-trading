@@ -15,6 +15,10 @@
     "crosses_above": "crosses above",
     "crosses_below": "crosses below"
   },
+  "when": [
+    {"value": "every_day", "label": "every day while true"},
+    {"value": "becomes_true", "label": "once, when it becomes true"}
+  ],
   "price_fields": [
     {"value": "close", "label": "Close"},
     {"value": "open", "label": "Open"},

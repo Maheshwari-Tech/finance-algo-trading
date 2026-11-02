@@ -47,7 +47,7 @@ export class Controls {
     this.el.replaceChildren(
       h("h2", {}, "Strategy"),
       field("Instrument", select(this.symbols.map((s) => ({ value: s.symbol, label: `${s.symbol} · ${s.rows.toLocaleString()} days` })), this.state.symbol, (v) => this.set("symbol", v))),
-      field("Rule", select([...this.catalog.strategies.map((s) => ({ value: s.id, label: s.name })), { value: CUSTOM, label: "Build your own..." }], this.state.strategy_id, (v) => {
+      field("Rule", ruleSelect(this.catalog.strategies.map((s) => ({ value: s.id, label: s.name })), this.state.strategy_id, (v) => {
         this.state.strategy_id = v;
         if (v !== CUSTOM) this.state.params = defaults(this.strategy);
         this.render();
@@ -63,6 +63,8 @@ export class Controls {
       ...(this.isCustom ? [] : [field("Lots per position", numberInput(this.state.lots, L.lots, (v) => this.set("lots", Math.round(v))))]),
       field("Max lots held (0 = no limit)", numberInput(this.state.max_position, L.max_position, (v) => this.set("max_position", Math.round(v)))),
       toggle("Allow selling before buying", "A sell with nothing to sell opens a short position. When off, sells only close what you hold.", this.state.allow_short, (v) => this.set("allow_short", v)),
+      toggle("Don't let cash go below 0", "Buys are cut to what your cash can pay for (including charges). The order log shows what was cut.", this.state.limit_to_cash, (v) => this.set("limit_to_cash", v)),
+      toggle("Inverse strategy", "Run the mirror image: every buy becomes a sell of the same size and vice versa.", this.state.invert, (v) => this.set("invert", v)),
       toggle("Apply charges", "Charge a % of the traded value on every buy and sell.", this.state.charges_enabled, (v) => { this.state.charges_enabled = v; this.render(); this.emit(); }),
       ...(this.state.charges_enabled ? [field("Charge per trade (%)", numberInput(this.state.fee_pct, L.fee_pct, (v) => this.set("fee_pct", v)))] : []),
       h("h2", { class: "spaced" }, "Period"),
@@ -102,6 +104,14 @@ const field = (label: string, input: HTMLElement) => h("label", { class: "field"
 function select(options: { value: string; label: string }[], value: string, on: (v: string) => void) {
   return h("select", { on: { change: (e) => on((e.target as HTMLSelectElement).value) } },
     options.map((o) => h("option", { value: o.value, selected: o.value === value }, o.label)));
+}
+
+/** Strategy picker: built-in strategies, then "Build your own..." in its own group, styled apart. */
+function ruleSelect(builtIn: { value: string; label: string }[], value: string, on: (v: string) => void) {
+  const el = h("select", { class: value === CUSTOM ? "rule-select custom-picked" : "rule-select", on: { change: (e) => on((e.target as HTMLSelectElement).value) } },
+    h("optgroup", { label: "Built-in strategies" }, builtIn.map((o) => h("option", { value: o.value, selected: o.value === value }, o.label))),
+    h("optgroup", { label: "Your own rules", class: "custom-group" }, h("option", { value: CUSTOM, selected: value === CUSTOM, class: "custom-option" }, "✎ Build your own...")));
+  return el;
 }
 
 function numberInput(value: number, range: { min?: number; max?: number; step?: number }, on: (v: number) => void) {

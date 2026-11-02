@@ -7,7 +7,9 @@ import pandas as pd
 
 from ..appconfig import AnalysisConfig
 from .engine import Simulation
-from .results import CapitalPoint, DateWindow, Metrics, MonthlyReturn
+from .results import CapitalPoint, DateWindow, Metrics, MonthlyReturn, Trade
+
+TOL_MONEY = 0.005
 
 
 def longest_run(mask: np.ndarray) -> Tuple[int, int, int]:
@@ -66,17 +68,19 @@ def _point(f: pd.DataFrame, col: str, kind: str) -> CapitalPoint:
     return CapitalPoint(value=float(f[col].iloc[i]), date=f.index[i].strftime("%Y-%m-%d"))
 
 
-def compute_metrics(sim: Simulation, monthly: List[MonthlyReturn], cfg: AnalysisConfig) -> Metrics:
+def compute_metrics(sim: Simulation, trades: List[Trade], monthly: List[MonthlyReturn], cfg: AnalysisConfig) -> Metrics:
     TRADING_DAYS = cfg.trading_days_per_year
-    f, idx, trades, base = sim.frame, sim.frame.index, sim.trades, sim.return_base
+    f, idx, base = sim.frame, sim.frame.index, sim.return_base
     capital = sim.cfg.initial_capital
     ret, eq = f["ret"], f["equity"].to_numpy()
     years = max((idx[-1] - idx[0]).days / 365.25, 1 / 365.25)
     final = float(eq[-1])
     profit = final - capital
-    total_ret = profit / base
+    peak_cost = float(f["position_cost"].max())
+    total_ret = profit / peak_cost if peak_cost > 0 else 0.0
+    on_cash = profit / sim.peak_cash_in if sim.peak_cash_in > TOL_MONEY else None
     cagr = (1 + total_ret) ** (1 / years) - 1 if total_ret > -1 else -1.0
-    bench_ret = float(f["benchmark"].iloc[-1] - capital) / base
+    bench_ret = float(f["benchmark"].iloc[-1] - capital) / base if peak_cost > 0 else 0.0
     vol = float(ret.std(ddof=0) * np.sqrt(TRADING_DAYS))
     downside = float(ret[ret < 0].std(ddof=0) * np.sqrt(TRADING_DAYS)) if (ret < 0).sum() > 1 else 0.0
     dd = f["drawdown"].to_numpy()
@@ -96,9 +100,11 @@ def compute_metrics(sim: Simulation, monthly: List[MonthlyReturn], cfg: Analysis
         initial_capital=capital, return_base=base, final_equity=final,
         min_cash=_point(f, "cash", "min"), max_cash=_point(f, "cash", "max"),
         peak_equity=_point(f, "equity", "max"), lowest_equity=_point(f, "equity", "min"),
-        max_cash_invested=max(0.0, capital - float(f["cash"].min())),
+        max_cash_invested=sim.peak_cash_in,
         max_exposure=float((f["position"] * f["close"]).abs().max()), final_position=float(f["position"].iloc[-1]),
-        total_profit=profit, total_return=total_ret, cagr=float(cagr),
+        final_avg_price=float(f["avg_price"].iloc[-1]), peak_position_cost=peak_cost, peak_cash_in=sim.peak_cash_in,
+        total_profit=profit, realized_pnl=float(f["realized_cum"].iloc[-1]), unrealized_pnl=float(f["unrealized"].iloc[-1]),
+        return_on_position_cost=total_ret, return_on_cash=on_cash, total_return=total_ret, cagr=float(cagr),
         gross_profit=float(gp), gross_loss=float(gl), fees_paid=fees, fee_drag=fees / base,
         benchmark_return=bench_ret, alpha=total_ret - bench_ret,
         volatility=vol, sharpe=float(ret.mean() * TRADING_DAYS / vol) if vol > 0 else 0.0,
