@@ -1,0 +1,29 @@
+{{/* Creates tables and loads the bundled dataset once per release, before the API rolls out. */}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "st.fullname" . }}-db-init
+  labels: {{ include "st.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.dbInit.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.dbInit.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "st.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: db-init
+        azure.workload.identity/use: "true"
+    spec:
+      restartPolicy: Never
+      {{- include "st.podCommon" . | nindent 6 }}
+      containers:
+        - name: db-init
+          {{- include "st.containerCommon" . | nindent 10 }}
+          command: ["python", "-m", "app.dbinit"]
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: 500m, memory: 512Mi}

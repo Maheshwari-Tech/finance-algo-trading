@@ -1,0 +1,16 @@
+# Application Gateway for Containers resource, created once per cluster (not per release).
+# Apply after the ALB controller is installed:  envsubst < deploy/azure/alb.yaml | kubectl apply -f -
+# ALB_SUBNET_ID: resource ID of the subnet delegated to Microsoft.ServiceNetworking/trafficControllers.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: alb-infra
+---
+apiVersion: alb.networking.azure.io/v1
+kind: ApplicationLoadBalancer
+metadata:
+  name: alb-trader
+  namespace: alb-infra
+spec:
+  associations:
+    - ${ALB_SUBNET_ID}

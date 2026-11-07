@@ -12,6 +12,7 @@ from .results import Check, DayRow, Order, PeriodRow, Trade, WeekRow
 
 TOL = 0.01  # per-row money tolerance (one paisa)
 TOTAL_TOL = 0.02  # cross-total tolerance: published rows are rounded to paise
+CLOSE_ROUNDING = 0.00005  # half a unit of the 4th decimal: the most rounding the published close can add per lot
 
 
 def _r(v: float, d: int = 2) -> float:
@@ -230,9 +231,11 @@ def run_checks(sim: Simulation, orders: List[Order], trades: List[Trade], weeks:
     f, cfg = sim.frame, sim.cfg
     checks: List[Check] = []
 
-    def add(name: str, errors: list, total: int, unit: str, tol: float = TOL) -> None:
+    def add(name: str, errors: list, total: int, unit: str, tol: float = TOL, extra: Optional[list] = None) -> None:
+        # extra: per-row allowance on top of tol (e.g. rounding of an input that is multiplied by many lots)
+        allow = extra if extra is not None else [0.0] * len(errors)
         worst = max((abs(e) for e in errors), default=0.0)
-        bad = sum(1 for e in errors if abs(e) > tol)
+        bad = sum(1 for e, a in zip(errors, allow, strict=True) if abs(e) > tol + a)
         checks.append(Check(name=name, ok=bad == 0,
                             detail=f"{total:,} {unit} checked, {bad} off (largest difference {worst:.4f})"))
 
@@ -251,7 +254,8 @@ def run_checks(sim: Simulation, orders: List[Order], trades: List[Trade], weeks:
     add("Weekly realised P&L adds up to total realised (rounded to paise)", [sum(w.realized for w in weeks) - float(f["realized_cum"].iloc[-1])], 1, "total", TOTAL_TOL)
     if days:
         add("Daily transactions: every day net worth = cash after + lots held x close",
-            [d.net_worth - (d.cash_after + d.lots * d.close) for d in days], len(days), "days", TOTAL_TOL)
+            [d.net_worth - (d.cash_after + d.lots * d.close) for d in days], len(days), "days", TOTAL_TOL,
+            extra=[abs(d.lots) * CLOSE_ROUNDING for d in days])  # close is published to 4 decimals, then multiplied by the lots
         add("Daily transactions: day P&L adds up to total profit (rounded to paise)", [sum(d.day_pnl for d in days) - profit], 1, "total", TOTAL_TOL)
     for name, rows in (overviews or {}).items():
         add(f"{name}: P&L adds up to total profit (rounded to paise)", [sum(p.pnl for p in rows) - profit], 1, "total", TOTAL_TOL)

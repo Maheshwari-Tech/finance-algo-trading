@@ -1,0 +1,54 @@
+{{/* Hooks, so they exist before the db-init Job (which also needs the vault secrets) on install and upgrade. */}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "st.serviceAccountName" . }}
+  labels: {{ include "st.labels" . | nindent 4 }}
+  annotations:
+    azure.workload.identity/client-id: {{ required "keyVault.workloadIdentityClientId is required" .Values.keyVault.workloadIdentityClientId | quote }}
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: {{ include "st.fullname" . }}
+  labels: {{ include "st.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    clientID: {{ .Values.keyVault.workloadIdentityClientId | quote }}
+    keyvaultName: {{ required "keyVault.name is required" .Values.keyVault.name | quote }}
+    tenantId: {{ required "keyVault.tenantId is required" .Values.keyVault.tenantId | quote }}
+    objects: |
+      array:
+{{- range .Values.keyVault.secrets }}
+        - |
+          objectName: {{ .name }}
+          objectType: secret
+{{- end }}
+{{- if .Values.keyVault.tlsCertName }}
+        - |
+          objectName: {{ .Values.keyVault.tlsCertName }}
+          objectType: secret
+{{- end }}
+  secretObjects:
+    - secretName: {{ include "st.secretName" . }}
+      type: Opaque
+      data:
+{{- range .Values.keyVault.secrets }}
+        - {objectName: {{ .name }}, key: {{ .env }}}
+{{- end }}
+{{- if .Values.keyVault.tlsCertName }}
+    - secretName: {{ include "st.tlsSecretName" . }}
+      type: kubernetes.io/tls
+      data:
+        - {objectName: {{ .Values.keyVault.tlsCertName }}, key: tls.key}
+        - {objectName: {{ .Values.keyVault.tlsCertName }}, key: tls.crt}
+{{- end }}

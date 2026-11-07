@@ -58,6 +58,7 @@ class Settings:
     log_level: str = "INFO"
     log_json: bool = False
     redis_url: Optional[str] = None  # optional; shared rate-limit counters across app replicas
+    seed_default_dataset: bool = True  # load the bundled dataset at startup; off for replicas, a one-shot job does it (app.dbinit)
 
     @property
     def is_production(self) -> bool:
@@ -93,5 +94,6 @@ class Settings:
             allowed_mobiles=_mobiles(os.getenv("ALLOWED_MOBILES", ""), country),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             redis_url=os.getenv("REDIS_URL", "").strip() or None,
+            seed_default_dataset=os.getenv("SEED_DEFAULT_DATASET", "true").lower() != "false",
             log_json=os.getenv("LOG_JSON", "true" if app_env == "production" else "false").lower() == "true",
         )

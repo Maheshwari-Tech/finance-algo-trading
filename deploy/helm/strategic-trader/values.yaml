@@ -1,0 +1,81 @@
+# Defaults. Environment-specific values (image, Key Vault, hostname, subnet) go in values-<env>.yaml or --set flags from CI.
+
+image:
+  repository: ""        # <acr>.azurecr.io/strategic-trader-api
+  tag: ""              # git SHA, set by CI
+  pullPolicy: IfNotPresent
+
+# Plain (non-secret) settings. Secrets come from Key Vault, see keyVault below.
+app:
+  env: production
+  authMode: dev                  # invite-only: shared access code (OTP_DEV_CODE) + ALLOWED_MOBILES, both from Key Vault
+  defaultCountryCode: "91"
+  corsOrigins: ""                # comma separated frontend origins, e.g. https://app.example.com
+  logLevel: INFO
+  seedDefaultDataset: false      # the db-init Job loads the bundled dataset; replicas must not race to do it
+
+replicaCount: 2                  # ignored while autoscaling.enabled
+
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {cpu: "1", memory: 1Gi}
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 65   # backtests are CPU-bound
+  targetMemoryUtilizationPercentage: 0 # 0 = off
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Azure Key Vault through the Secrets Store CSI driver, authenticated with AKS workload identity (no stored credentials).
+keyVault:
+  name: ""
+  tenantId: ""
+  workloadIdentityClientId: ""   # client ID of the user-assigned managed identity federated to this ServiceAccount
+  # Key Vault secret name -> environment variable. Create each one in the vault before deploying.
+  secrets:
+    - {name: database-url, env: DATABASE_URL}
+    - {name: redis-url, env: REDIS_URL}
+    - {name: secret-key, env: SECRET_KEY}
+    - {name: admin-mobiles, env: ADMIN_MOBILES}
+    - {name: otp-dev-code, env: OTP_DEV_CODE}
+    - {name: allowed-mobiles, env: ALLOWED_MOBILES}
+  tlsCertName: ""                # optional: Key Vault certificate synced as the Gateway's TLS secret
+
+serviceAccount:
+  name: ""                       # defaults to the release name
+
+# Application Gateway for Containers (Gateway API). The ALB resource itself is created once per cluster (deploy/azure/alb.yaml).
+gateway:
+  enabled: true
+  albName: alb-trader
+  albNamespace: alb-infra
+  hostname: ""                   # e.g. api.example.com (optional)
+  tls:
+    enabled: false
+    secretName: ""               # defaults to "<release>-tls" when keyVault.tlsCertName is set
+  # Only these paths are routed. /metrics is deliberately absent so it is never public.
+  pathPrefixes: ["/api"]
+
+# Restrict traffic to the pods. Application Gateway for Containers connects from its delegated subnet, not from pods.
+networkPolicy:
+  enabled: false
+  albSubnetCidr: ""              # CIDR of the subnet delegated to Microsoft.ServiceNetworking/trafficControllers
+  egressPorts: [5432, 6380]      # PostgreSQL, Azure Cache for Redis (TLS)
+
+# Azure Managed Prometheus (azure-monitor-metrics addon) scrape of /metrics
+podMonitor:
+  enabled: true
+  interval: 30s
+
+dbInit:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

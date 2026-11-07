@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+# Backend-only image for Kubernetes (AKS). The frontend is built and hosted separately.
+# Build from the repository root:  docker build -f Dockerfile.api -t strategic-trader-api .
+
+# ---- 1. Python dependencies ----
+FROM python:3.12-slim-bookworm AS deps
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN python -m venv /venv
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN /venv/bin/pip install -r /tmp/requirements.txt
+
+# ---- 2. Runtime ----
+FROM python:3.12-slim-bookworm AS runtime
+ARG GIT_SHA=dev
+ENV PATH=/venv/bin:$PATH \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_ENV=production \
+    APP_VERSION=$GIT_SHA
+# Numeric IDs so Kubernetes can enforce runAsNonRoot.
+RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --home /app app
+WORKDIR /app
+COPY --from=deps /venv /venv
+COPY backend/app ./backend/app
+COPY config ./config
+COPY examples ./examples
+USER 10001:10001
+WORKDIR /app/backend
+EXPOSE 8123
+# One worker per container keeps Prometheus counters exact; Kubernetes scales by adding pods.
+# No HEALTHCHECK: Kubernetes probes /api/health and /api/ready.
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8123", \
+     "--proxy-headers", "--forwarded-allow-ips=*", "--no-server-header", "--timeout-graceful-shutdown", "20"]

@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "st.fullname" . }}
+  labels:
+    {{- include "st.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      {{- include "st.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "st.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+        azure.workload.identity/use: "true"
+    spec:
+      {{- include "st.podCommon" . | nindent 6 }}
+      terminationGracePeriodSeconds: 30
+      {{- with .Values.affinity }}
+      affinity: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "st.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "st.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      containers:
+        - name: api
+          {{- include "st.containerCommon" . | nindent 10 }}
+          ports:
+            - {name: http, containerPort: 8123}
+          startupProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet: {path: /api/ready, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              exec: {command: ["sleep", "5"]}  # let the gateway stop sending traffic before uvicorn drains
+          resources: {{ toYaml .Values.resources | nindent 12 }}

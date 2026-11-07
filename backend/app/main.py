@@ -67,7 +67,8 @@ def create_app(settings: Optional[Settings] = None, config: Optional[AppConfig] 
     docs = {} if not settings.is_production else {"docs_url": None, "redoc_url": None, "openapi_url": None}
     app = FastAPI(title="Strategic Trader", version="2.0.0", description=API_DESCRIPTION, openapi_tags=API_TAGS, **docs)
     repo = SqlPriceRepository(engine, config.data.symbol_pattern)
-    seed_default_dataset(repo, config)
+    if settings.seed_default_dataset:
+        seed_default_dataset(repo, config)
     strategies = build_strategies(config.strategies)
     app.state.settings, app.state.config, app.state.repo, app.state.strategies = settings, config, repo, strategies
     app.state.engine = engine

@@ -96,6 +96,8 @@ cd ../frontend && npm run build
 
 One VM runs Docker Compose: `app` (API + website), `caddy` (HTTPS), `prometheus`, `grafana` and `node-exporter`. CircleCI tests every push and auto-deploys green pushes to `main`, rolling back if the new version doesn't come up. Details: [architecture § 10](docs/architecture.md#10-build-and-deploy).
 
+**Backend on Azure Kubernetes Service:** a backend-only image (`Dockerfile.api`), a Helm chart (`deploy/helm/strategic-trader`), Application Gateway for Containers and a GitHub Actions pipeline. Step-by-step setup: [docs/deploy-azure.md](docs/deploy-azure.md).
+
 **Logs**
 - App logs go to stdout, as JSON in production. On the server: `docker compose -f docker-compose.prod.yml logs -f app` in `/opt/algo-trading`.
 - Kept by Docker, 5 × 20 MB per container.

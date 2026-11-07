@@ -1,0 +1,129 @@
+name: Backend to AKS
+
+# Test and lint on every change. On main: build the backend image, push it to ACR and deploy with Helm.
+# Setup (OIDC, variables, roles): docs/deploy-azure.md
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "config/**", "examples/**", "Dockerfile.api", "deploy/helm/**", ".github/workflows/backend-aks.yml"]
+  pull_request:
+    paths: ["backend/**", "config/**", "examples/**", "Dockerfile.api", "deploy/helm/**", ".github/workflows/backend-aks.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: backend-aks-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r backend/requirements-dev.txt
+      - run: ruff check app tests
+        working-directory: backend
+      - run: pytest -q
+        working-directory: backend
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint and render the chart
+        run: |
+          set -euo pipefail
+          args="--set image.repository=example.azurecr.io/strategic-trader-api --set image.tag=ci \
+                --set keyVault.name=kv --set keyVault.tenantId=t --set keyVault.workloadIdentityClientId=c"
+          helm lint deploy/helm/strategic-trader $args
+          helm template ci deploy/helm/strategic-trader $args > /dev/null
+
+  build:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [test, chart]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: az acr login --name "${{ vars.ACR_NAME }}"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          push: true
+          build-args: GIT_SHA=${{ steps.meta.outputs.tag }}
+          tags: ${{ vars.ACR_NAME }}.azurecr.io/strategic-trader-api:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production   # add required reviewers in GitHub > Settings > Environments for a manual approval gate
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.1.4
+      - uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ vars.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER }}
+          use-kubelogin: "true"
+      - uses: azure/setup-helm@v4
+      # --atomic rolls back automatically when the readiness checks fail. The pre-upgrade db-init Job runs first.
+      - name: helm upgrade
+        run: |
+          helm upgrade --install strategic-trader deploy/helm/strategic-trader \
+            --namespace "${{ vars.K8S_NAMESPACE }}" \
+            --atomic --wait --timeout 10m \
+            --set image.repository="${{ vars.ACR_NAME }}.azurecr.io/strategic-trader-api" \
+            --set image.tag="${{ needs.build.outputs.tag }}" \
+            --set keyVault.name="${{ vars.KEYVAULT_NAME }}" \
+            --set keyVault.tenantId="${{ vars.AZURE_TENANT_ID }}" \
+            --set keyVault.workloadIdentityClientId="${{ vars.WORKLOAD_IDENTITY_CLIENT_ID }}" \
+            --set gateway.albName="${{ vars.ALB_NAME || 'alb-trader' }}" \
+            --set gateway.albNamespace="${{ vars.ALB_NAMESPACE || 'alb-infra' }}" \
+            --set gateway.hostname="${{ vars.API_HOSTNAME }}" \
+            --set gateway.tls.enabled="${{ vars.TLS_CERT_NAME != '' }}" \
+            --set keyVault.tlsCertName="${{ vars.TLS_CERT_NAME }}" \
+            --set app.corsOrigins="${{ vars.CORS_ORIGINS }}"
+      - name: Smoke test
+        if: vars.API_HOSTNAME != ''
+        run: |
+          scheme=${{ vars.TLS_CERT_NAME != '' && 'https' || 'http' }}
+          for i in $(seq 1 12); do
+            curl -fsS "$scheme://${{ vars.API_HOSTNAME }}/api/ready" && exit 0
+            sleep 10
+          done
+          echo "API did not become ready" >&2
+          exit 1

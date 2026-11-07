@@ -1,0 +1,6 @@
+apiVersion: v2
+name: strategic-trader
+description: Strategic Trader backend API for AKS, exposed through Application Gateway for Containers
+type: application
+version: 0.1.0
+appVersion: "2.0.0"
