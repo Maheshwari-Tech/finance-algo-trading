@@ -5,10 +5,19 @@ metadata:
   name: {{ include "st.fullname" . }}
   labels: {{ include "st.labels" . | nindent 4 }}
   annotations:
+    {{- if .Values.gateway.albId }}
+    alb.networking.azure.io/alb-id: {{ .Values.gateway.albId | quote }}
+    {{- else }}
     alb.networking.azure.io/alb-namespace: {{ .Values.gateway.albNamespace | quote }}
     alb.networking.azure.io/alb-name: {{ .Values.gateway.albName | quote }}
+    {{- end }}
 spec:
   gatewayClassName: azure-alb-external
+  {{- if .Values.gateway.albId }}
+  addresses:
+    - type: alb.networking.azure.io/alb-frontend
+      value: {{ required "gateway.frontendName is required with gateway.albId" .Values.gateway.frontendName | quote }}
+  {{- end }}
   listeners:
     - name: http
       port: 80

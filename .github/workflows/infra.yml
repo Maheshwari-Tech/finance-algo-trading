@@ -1,0 +1,134 @@
+name: Infrastructure (Terraform)
+
+# Creates and updates everything in Azure: network, ACR, AKS, PostgreSQL, Redis, Key Vault, identities,
+# Application Gateway for Containers, Prometheus. Then prepares the cluster (namespace + ALB controller).
+#   pull request -> fmt, validate, plan          main -> plan, then apply after approval (environment "production")
+# One-time setup (state storage, OIDC identity, variables): deploy/scripts/bootstrap.sh and docs/deploy-azure.md
+
+on:
+  push:
+    branches: [main]
+    paths: ["deploy/terraform/**", "deploy/scripts/bootstrap-cluster.sh", ".github/workflows/infra.yml"]
+  pull_request:
+    paths: ["deploy/terraform/**", "deploy/scripts/bootstrap-cluster.sh", ".github/workflows/infra.yml"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "apply = create/update everything; destroy = delete everything Terraform manages"
+        type: choice
+        options: [apply, destroy]
+        default: apply
+
+concurrency:
+  group: infra
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_INPUT: "false"
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_suffix: ${{ vars.TF_SUFFIX }}
+  TF_VAR_location: ${{ vars.AZURE_LOCATION || 'centralindia' }}
+  TF_VAR_admin_object_ids: ${{ vars.ADMIN_OBJECT_IDS || '[]' }}
+  TF_VAR_otp_code: ${{ secrets.OTP_CODE }}
+  TF_VAR_admin_mobiles: ${{ secrets.ADMIN_MOBILES }}
+  TF_VAR_allowed_mobiles: ${{ secrets.ALLOWED_MOBILES }}
+
+defaults:
+  run:
+    working-directory: deploy/terraform
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - name: init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=strategic-trader.tfstate" \
+            -backend-config="use_azuread_auth=true"
+      - run: terraform validate
+      - run: terraform plan -lock-timeout=5m ${{ github.event.inputs.action == 'destroy' && '-destroy' || '' }}
+
+  apply:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production   # add required reviewers in GitHub > Settings > Environments for a manual approval gate
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=strategic-trader.tfstate" \
+            -backend-config="use_azuread_auth=true"
+      - name: apply
+        if: github.event.inputs.action != 'destroy'
+        run: terraform apply -auto-approve -lock-timeout=5m
+      - name: destroy
+        if: github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve -lock-timeout=5m
+
+      # Everything below prepares the cluster for the API (skipped on destroy).
+      - name: read outputs
+        id: tf
+        if: github.event.inputs.action != 'destroy'
+        run: |
+          echo "rg=$(terraform output -raw resource_group)" >> "$GITHUB_OUTPUT"
+          echo "aks=$(terraform output -raw aks_name)" >> "$GITHUB_OUTPUT"
+          echo "ns=$(terraform output -raw namespace)" >> "$GITHUB_OUTPUT"
+          echo "alb=$(terraform output -raw alb_controller_client_id)" >> "$GITHUB_OUTPUT"
+          echo "release=$(terraform output -raw release_name)" >> "$GITHUB_OUTPUT"
+      - uses: azure/login@v2
+        if: github.event.inputs.action != 'destroy'
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: azure/use-kubelogin@v1
+        if: github.event.inputs.action != 'destroy'
+        with:
+          kubelogin-version: v0.1.4
+      - name: namespace and ALB controller
+        if: github.event.inputs.action != 'destroy'
+        working-directory: .
+        env:
+          RG: ${{ steps.tf.outputs.rg }}
+          AKS: ${{ steps.tf.outputs.aks }}
+          NS: ${{ steps.tf.outputs.ns }}
+          ALB_CLIENT_ID: ${{ steps.tf.outputs.alb }}
+          ALB_VERSION: ${{ vars.ALB_CONTROLLER_VERSION || '1.13.0' }}
+        run: bash deploy/scripts/bootstrap-cluster.sh
+      # Pods read the invite list and access code from Key Vault when they start, so restart them after a change.
+      - name: restart API to pick up changed secrets
+        if: github.event.inputs.action != 'destroy'
+        run: |
+          kubectl -n "${{ steps.tf.outputs.ns }}" rollout restart "deploy/${{ steps.tf.outputs.release }}" 2>/dev/null \
+            && kubectl -n "${{ steps.tf.outputs.ns }}" rollout status "deploy/${{ steps.tf.outputs.release }}" --timeout=5m \
+            || echo "API not deployed yet; nothing to restart"

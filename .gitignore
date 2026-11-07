@@ -30,3 +30,12 @@ frontend/dist/
 .idea/
 .vscode/
 .DS_Store
+
+# Terraform (the lock file IS committed)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl
+crash.log

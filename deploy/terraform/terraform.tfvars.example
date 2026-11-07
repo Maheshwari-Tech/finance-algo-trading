@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars for local runs (the pipeline uses TF_VAR_* from GitHub variables/secrets instead).
+# Secrets (otp_code, admin_mobiles, allowed_mobiles) are better passed as environment variables:
+#   export TF_VAR_otp_code=123456 TF_VAR_admin_mobiles=9999999999 TF_VAR_allowed_mobiles=9888888888,9777777777
+
+suffix   = "mt7k" # same value you gave bootstrap.sh
+location = "centralindia"
+
+# Who may use kubectl on the cluster besides the pipeline: your user object ID (az ad signed-in-user show --query id -o tsv)
+admin_object_ids = []
+
+# Cheaper non-production database
+# pg_high_availability = false
+# pg_sku_name          = "B_Standard_B2s"   # Burstable tier requires pg_high_availability = false
+
+# enable_grafana = true

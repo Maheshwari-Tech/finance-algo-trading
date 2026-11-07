@@ -49,9 +49,13 @@ keyVault:
 serviceAccount:
   name: ""                       # defaults to the release name
 
-# Application Gateway for Containers (Gateway API). The ALB resource itself is created once per cluster (deploy/azure/alb.yaml).
+# Application Gateway for Containers (Gateway API).
+# Preferred ("bring your own"): Terraform creates the gateway and frontend; pass their IDs with albId + frontendName.
+# Alternative: leave albId empty and create an ApplicationLoadBalancer resource in the cluster (albName/albNamespace).
 gateway:
   enabled: true
+  albId: ""                      # resource ID of the Application Gateway for Containers (terraform output agc_id)
+  frontendName: ""               # frontend name (terraform output agc_frontend_name)
   albName: alb-trader
   albNamespace: alb-infra
   hostname: ""                   # e.g. api.example.com (optional)
