@@ -1,13 +1,13 @@
 {
   "operands": {
-    "price": {"label": "Price"},
-    "sma": {"label": "Simple moving average", "default_period": 20},
-    "ema": {"label": "Exponential moving average", "default_period": 20},
-    "rsi": {"label": "RSI", "default_period": 14},
-    "change_pct": {"label": "% change over N days", "default_period": 1},
-    "highest": {"label": "Highest high of last N days", "default_period": 20},
-    "lowest": {"label": "Lowest low of last N days", "default_period": 20},
-    "value": {"label": "Number"}
+    "price": {"label": "Price", "help": "The day's open, high, low or close price, or yesterday's close."},
+    "sma": {"label": "Simple moving average", "default_period": 20, "help": "Average of the last N closing prices. Smooths out daily noise to show the trend."},
+    "ema": {"label": "Exponential moving average", "default_period": 20, "help": "Like a simple average over N days, but recent days count more, so it reacts faster."},
+    "rsi": {"label": "RSI", "default_period": 14, "help": "Relative Strength Index, 0 to 100, over N days. Below 30 is often called oversold, above 70 overbought."},
+    "change_pct": {"label": "% change over N days", "default_period": 1, "help": "How much the close moved compared with N days ago, in percent. N = 1 means since yesterday."},
+    "highest": {"label": "Highest high of last N days", "default_period": 20, "help": "The highest price of the previous N days (today not included). Closing above it is a breakout."},
+    "lowest": {"label": "Lowest low of last N days", "default_period": 20, "help": "The lowest price of the previous N days (today not included). Closing below it is a breakdown."},
+    "value": {"label": "Number", "help": "A fixed number you type, e.g. 1 for 1% or 30 for RSI 30."}
   },
   "operators": {
     "gt": "is above",
@@ -15,10 +15,6 @@
     "crosses_above": "crosses above",
     "crosses_below": "crosses below"
   },
-  "when": [
-    {"value": "every_day", "label": "every day while true"},
-    {"value": "becomes_true", "label": "once, when it becomes true"}
-  ],
   "price_fields": [
     {"value": "close", "label": "Close"},
     {"value": "open", "label": "Open"},

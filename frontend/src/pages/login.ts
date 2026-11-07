@@ -72,9 +72,8 @@ export async function loginPage(root: HTMLElement, onLoggedIn: (user: UserInfo) 
     clear(card);
     card.append(h("form", { on: { submit } },
       h("h2", {}, "Enter code"),
-      h("p", { class: "hint" }, `We sent a ${cfg.otp_length}-digit code to ${mobile}.`),
-      cfg.mode === "dev" && h("p", { class: "dev-note" }, "No SMS is sent. Enter the access code you were given."),
-      h("label", { class: "field" }, h("span", {}, "One-time code"), input), msg, button,
+      h("p", { class: "hint" }, `Enter the OTP or access code given to you for ${mobile}.`),
+      h("label", { class: "field" }, h("span", {}, "OTP or access code"), input), msg, button,
       h("div", { class: "login-links" }, resend, h("button", { type: "button", class: "btn ghost", on: { click: () => mobileStep() } }, "Change number"))));
   }
 

@@ -27,7 +27,7 @@
     "max_trade_log_rows": 200,
     "page_size": 50
   },
-  "new_rule": {"action": "buy", "lots": 1, "match": "all", "when": "every_day", "conditions": []},
+  "new_rule": {"action": "buy", "lots": 1, "match": "all", "conditions": []},
   "new_condition": {
     "buy": {"left": {"kind": "change_pct", "period": 1}, "op": "gt", "right": {"kind": "value", "value": 1}},
     "sell": {"left": {"kind": "change_pct", "period": 1}, "op": "lt", "right": {"kind": "value", "value": -1}}

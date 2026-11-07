@@ -42,3 +42,35 @@ CREATE TABLE IF NOT EXISTS price_bars (
     close DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (symbol, date)
 );
+
+CREATE TABLE IF NOT EXISTS saved_strategies (
+    id BIGSERIAL PRIMARY KEY,
+    mobile VARCHAR(20) NOT NULL,
+    name VARCHAR(60) NOT NULL,
+    rules TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_saved_strategies_mobile_name UNIQUE (mobile, name)
+);
+CREATE INDEX IF NOT EXISTS ix_saved_strategies_mobile ON saved_strategies (mobile);
+
+CREATE TABLE IF NOT EXISTS feedback (
+    id BIGSERIAL PRIMARY KEY,
+    mobile VARCHAR(20) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    category VARCHAR(20),
+    message TEXT,
+    screenshot BYTEA,
+    screenshot_type VARCHAR(40)
+);
+CREATE INDEX IF NOT EXISTS ix_feedback_mobile ON feedback (mobile);
+CREATE INDEX IF NOT EXISTS ix_feedback_created_at ON feedback (created_at);
+
+CREATE TABLE IF NOT EXISTS saved_rules (
+    id BIGSERIAL PRIMARY KEY,
+    mobile VARCHAR(20) NOT NULL,
+    name VARCHAR(60) NOT NULL,
+    rule TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_saved_rules_mobile_name UNIQUE (mobile, name)
+);
+CREATE INDEX IF NOT EXISTS ix_saved_rules_mobile ON saved_rules (mobile);

@@ -3,12 +3,12 @@ import { h } from "../lib/dom";
 import { lots, money2, pct, price, tone } from "../lib/format";
 
 /** A table column: header, how to show a row, and the raw value written to CSV. */
-interface Col<T> { head: string; show: (r: T) => Node | string; raw: (r: T) => string | number; title?: string; cls?: (r: T) => string }
+export interface Col<T> { head: string; show: (r: T) => Node | string; raw: (r: T) => string | number; title?: string; cls?: (r: T) => string }
 
-const c = <T>(head: string, raw: (r: T) => string | number, show?: (r: T) => Node | string, cls?: (r: T) => string, title?: string): Col<T> =>
+export const c = <T>(head: string, raw: (r: T) => string | number, show?: (r: T) => Node | string, cls?: (r: T) => string, title?: string): Col<T> =>
   ({ head, raw, show: show ?? ((r) => String(raw(r))), cls, title });
 
-function csv<T>(name: string, cols: Col<T>[], rows: T[]) {
+export function csv<T>(name: string, cols: Col<T>[], rows: T[]) {
   const esc = (v: string | number) => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const text = [cols.map((x) => esc(x.head)).join(","), ...rows.map((r) => cols.map((x) => esc(x.raw(r))).join(","))].join("\n");
   const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([text], { type: "text/csv" })), download: name });
@@ -17,7 +17,7 @@ function csv<T>(name: string, cols: Col<T>[], rows: T[]) {
 }
 
 /** Paged table with a CSV button for all rows (not just the visible page). */
-function table<T>(cols: Col<T>[], rows: T[], pageSize: number, csvName: string, onRow?: (r: T) => void): HTMLElement {
+export function table<T>(cols: Col<T>[], rows: T[], pageSize: number, csvName: string, onRow?: (r: T) => void): HTMLElement {
   const wrap = h("div");
   let page = 0;
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));

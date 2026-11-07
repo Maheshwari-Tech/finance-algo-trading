@@ -13,6 +13,8 @@ from .appconfig import AppConfig, load_app_config
 from .auth.otp import build_sender
 from .auth.service import AuthService
 from .config import ConfigError, Settings
+from .data.feedback import FeedbackStore
+from .data.saved import SavedLibrary
 from .data.sql_repository import SqlPriceRepository
 from .db import init_schema, make_engine
 from .domain.strategies import build_strategies
@@ -21,6 +23,27 @@ from .ratelimit import IpRateLimiter
 from .services.service import BacktestService
 
 log = logging.getLogger("backtest")
+
+API_DESCRIPTION = """
+Backtest trading rules on real price history and get results anyone can check by hand.
+
+**Sign in:** `POST /api/auth/request-otp`, then `POST /api/auth/verify-otp` returns a token.
+Click **Authorize** and paste the token to call the other endpoints from this page.
+
+Full reference with curl examples: `docs/api.md` in the repository.
+"""
+
+API_TAGS = [
+    {"name": "Sign-in", "description": "Mobile number + one-time code. Returns a session token."},
+    {"name": "Catalog", "description": "Instruments, built-in strategies, rule-builder options and dashboard settings."},
+    {"name": "Test a rule", "description": "See every day one rule would place its order, with the values compared. No money."},
+    {"name": "Strategy", "description": "Run a strategy with money: orders, weekly rows, trades, metrics and checks."},
+    {"name": "Saved rules", "description": "Rules saved under your login. Strategies refer to them, so a change applies everywhere."},
+    {"name": "Saved strategies", "description": "Strategies saved under your login: a name plus the saved buy and sell rules they use."},
+    {"name": "Feedback", "description": "Send feedback: optional message, category and screenshot."},
+    {"name": "Admin", "description": "Price data and all feedback. Admin role only."},
+    {"name": "Operations", "description": "Health and readiness for monitoring and deploys."},
+]
 
 
 def create_app(settings: Optional[Settings] = None, config: Optional[AppConfig] = None) -> FastAPI:
@@ -41,11 +64,13 @@ def create_app(settings: Optional[Settings] = None, config: Optional[AppConfig] 
             log.warning("AUTH_MODE=dev: a fixed OTP is accepted for every mobile number, including admins.")
 
     docs = {} if not settings.is_production else {"docs_url": None, "redoc_url": None, "openapi_url": None}
-    app = FastAPI(title="Backtest Lab", version="2.0.0", **docs)
+    app = FastAPI(title="Strategic Trader", version="2.0.0", description=API_DESCRIPTION, openapi_tags=API_TAGS, **docs)
     repo = SqlPriceRepository(engine, config.data.symbol_pattern)
     strategies = build_strategies(config.strategies)
     app.state.settings, app.state.config, app.state.repo, app.state.strategies = settings, config, repo, strategies
     app.state.engine = engine
+    app.state.saved = SavedLibrary(engine)
+    app.state.feedback = FeedbackStore(engine)
     app.state.backtests = BacktestService(repo, strategies, config.analysis)
     app.state.auth = AuthService(engine, settings, config.auth, build_sender(settings))
     app.state.ip_limiter = IpRateLimiter(config.auth.ip_requests_per_minute, settings.redis_url)

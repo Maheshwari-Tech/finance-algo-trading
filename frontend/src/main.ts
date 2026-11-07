@@ -5,9 +5,13 @@ import type { UserInfo } from "./api/types";
 import { clear, h } from "./lib/dom";
 import { AUTH_EXPIRED, session } from "./lib/session";
 import { setUiConfig } from "./lib/uiConfig";
+import { clearSavedCache, loadSaved } from "./lib/savedStrategies";
 import { adminPage } from "./pages/admin";
+import { comparePage } from "./pages/compare";
 import { dashboardPage } from "./pages/dashboard";
+import { feedbackPage } from "./pages/feedback";
 import { loginPage } from "./pages/login";
+import { testRulePage } from "./pages/testRule";
 
 const app = document.getElementById("app")!;
 const main = h("main", { class: "page" });
@@ -15,6 +19,9 @@ let user: UserInfo | null = null;
 
 const routes: Record<string, { admin?: boolean; page: (root: HTMLElement) => Promise<void> }> = {
   "/": { page: dashboardPage },
+  "/test": { page: testRulePage },
+  "/compare": { page: comparePage },
+  "/feedback": { page: feedbackPage },
   "/admin": { admin: true, page: adminPage },
 };
 
@@ -22,8 +29,8 @@ function topbar(): HTMLElement {
   const path = location.hash.slice(1) || "/";
   const link = (to: string, label: string) => h("a", { href: `#${to}`, class: path === to ? "active" : "" }, label);
   return h("header", { class: "topbar" },
-    h("div", { class: "brand" }, h("span", { class: "logo" }), h("strong", {}, "Backtest Lab"), h("span", { class: "tagline" }, "Try a trading idea on real history")),
-    h("nav", {}, link("/", "Dashboard"), user?.role === "admin" && link("/admin", "Admin"),
+    h("div", { class: "brand" }, h("span", { class: "logo" }), h("strong", {}, "Strategic Trader"), h("span", { class: "tagline" }, "Try a trading idea on real history")),
+    h("nav", {}, link("/test", "Test a rule"), link("/", "Strategy"), link("/compare", "Compare"), link("/feedback", "Feedback"), user?.role === "admin" && link("/admin", "Admin"),
       h("span", { class: "who" }, user!.mobile),
       h("button", { class: "btn ghost", on: { click: () => void signOut() } }, "Sign out")));
 }
@@ -31,6 +38,7 @@ function topbar(): HTMLElement {
 async function signOut() {
   try { await api.logout(); } catch { /* token may already be invalid */ }
   session.clear();
+  clearSavedCache();
   await boot();
 }
 
@@ -56,6 +64,7 @@ async function boot() {
     return;
   }
   setUiConfig(await api.uiConfig());
+  await loadSaved(true);
   await renderPage();
 }
 

@@ -135,7 +135,7 @@ else:
     check("app started", False)
 
 s, b = call("GET", "/api/ready");            check("GET /api/ready", s == 200, b.decode())
-s, b = call("GET", "/");                     check("GET / serves the frontend", s == 200 and b"Backtest Lab" in b)
+s, b = call("GET", "/");                     check("GET / serves the frontend", s == 200 and b"Strategic Trader" in b)
 s, _ = call("GET", "/api/symbols");          check("protected route without login -> 401", s == 401)
 s, _ = call("POST", "/api/auth/request-otp", {"mobile": "9000000001"}); check("request OTP", s == 200)
 s, _ = call("POST", "/api/auth/verify-otp", {"mobile": "9000000001", "otp": "000000"}); check("wrong code rejected", s == 400)
@@ -208,7 +208,7 @@ docker_build() {
     if curl -fsS "http://127.0.0.1:$port/api/ready"; then ok=0; break; fi
     sleep 1
   done
-  [ $ok = 0 ] && { curl -fsS "http://127.0.0.1:$port/" | grep -q "Backtest Lab" || ok=1; }
+  [ $ok = 0 ] && { curl -fsS "http://127.0.0.1:$port/" | grep -q "Strategic Trader" || ok=1; }
   docker logs algo-verify 2>&1 | tail -20
   docker rm -f algo-verify >/dev/null
   return $ok

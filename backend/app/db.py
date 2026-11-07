@@ -10,9 +10,12 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     MetaData,
     String,
     Table,
+    Text,
+    UniqueConstraint,
     create_engine,
     false,
     text,
@@ -55,6 +58,37 @@ instruments = Table(
     Column("symbol", String(20), primary_key=True),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Column("updated_by", String(20)),
+)
+
+saved_rules = Table(
+    "saved_rules", metadata,
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("mobile", String(20), nullable=False, index=True),
+    Column("name", String(60), nullable=False),
+    Column("rule", Text, nullable=False),  # TradeRule as JSON (action, lots, match, conditions)
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("mobile", "name", name="uq_saved_rules_mobile_name"),
+)
+
+saved_strategies = Table(
+    "saved_strategies", metadata,
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("mobile", String(20), nullable=False, index=True),
+    Column("name", String(60), nullable=False),
+    Column("rules", Text, nullable=False),  # {"rule_ids": [...]} referencing saved_rules (older rows: an inline RuleSet)
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("mobile", "name", name="uq_saved_strategies_mobile_name"),
+)
+
+feedback = Table(
+    "feedback", metadata,
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("mobile", String(20), nullable=False, index=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, index=True),
+    Column("category", String(20)),  # Bug | Idea | Other | NULL
+    Column("message", Text),
+    Column("screenshot", LargeBinary),
+    Column("screenshot_type", String(40)),
 )
 
 price_bars = Table(

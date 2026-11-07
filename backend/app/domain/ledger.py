@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .engine import Simulation
-from .results import Check, Order, Trade, WeekRow
+from .results import Check, DayRow, Order, PeriodRow, Trade, WeekRow
 
 TOL = 0.01  # per-row money tolerance (one paisa)
 TOTAL_TOL = 0.02  # cross-total tolerance: published rows are rounded to paise
@@ -143,7 +143,89 @@ def build_weeks(sim: Simulation, orders: List[Order]) -> List[WeekRow]:
     return rows
 
 
-def run_checks(sim: Simulation, orders: List[Order], trades: List[Trade], weeks: List[WeekRow]) -> List[Check]:
+def build_days(sim: Simulation, orders: List[Order], fired: Optional[dict] = None, prev_close: Optional[float] = None) -> List[DayRow]:
+    """Every trading day of the run. `fired` maps a date to the rule numbers true that day; `prev_close` is the
+    close before the window (for the first day's move)."""
+    f = sim.frame
+    by_date = {o.date: o for o in orders}  # the engine places at most one order per day
+    fired = fired or {}
+    rows: List[DayRow] = []
+    prev_eq, prev_c = _r(sim.cfg.initial_capital), prev_close
+    capital = _r(sim.cfg.initial_capital)
+    for d, row in f.iterrows():
+        key = d.strftime("%Y-%m-%d")
+        o = by_date.get(key)
+        pos, close, eq = float(row["position"]), float(row["close"]), _r(row["equity"])
+        if o is not None and o.filled != 0:
+            action = "buy" if o.filled > 0 else "sell"
+        elif o is not None:
+            action = "skipped"
+        else:
+            action = "holding" if pos > 0 else "short" if pos < 0 else "flat"
+        filled = o.filled if o else 0.0
+        rows.append(DayRow(
+            date=key, close=_r(close, 4), day_move=(close / prev_c - 1) if prev_c else None, rules=fired.get(key, []),
+            action=action, requested=o.requested if o else 0.0, filled=filled,
+            trade_value=_r(filled * o.price) if o else 0.0, fee=o.fee if o else 0.0,
+            cash_after=_r(row["cash"]), lots=pos, holdings=_r(pos * close), net_worth=eq,
+            day_pnl=_r(eq - prev_eq), total_pnl=_r(eq - capital),
+            order_no=o.no if o else None, note=o.note if o else "", reason=o.reason if o else ""))
+        prev_eq, prev_c = eq, close
+    return rows
+
+
+def _period(label: str, days: List[DayRow], orders: List[Order], trades: List[Trade], eq_start: float,
+            fees_start: float, fees_end: float, base: float) -> PeriodRow:
+    filled = [o for o in orders if o.filled != 0]
+    closed = [t for t in trades if not t.is_open and days[0].date <= t.exit_date <= days[-1].date]
+    pnl = _r(days[-1].net_worth - eq_start)
+    moves = [d.day_pnl for d in days]
+    cash = [d.cash_after for d in days]
+    return PeriodRow(
+        label=label, start=days[0].date, end=days[-1].date, days=len(days),
+        up_days=sum(1 for m in moves if m > 0), down_days=sum(1 for m in moves if m < 0),
+        net_worth_start=eq_start, net_worth_end=days[-1].net_worth, pnl=pnl, return_pct=pnl / base,
+        buys=sum(1 for o in filled if o.filled > 0), bought_lots=float(sum(o.filled for o in filled if o.filled > 0)),
+        sells=sum(1 for o in filled if o.filled < 0), sold_lots=float(-sum(o.filled for o in filled if o.filled < 0)),
+        skipped=sum(1 for o in orders if o.filled == 0), charges=_r(fees_end - fees_start),
+        lowest_cash=min(cash), highest_cash=max(cash), cash_end=days[-1].cash_after, lots_end=days[-1].lots,
+        best_day=max(moves), worst_day=min(moves),
+        trades_closed=len(closed), trades_closed_pnl=_r(sum(t.pnl for t in closed)))
+
+
+def build_periods(sim: Simulation, days: List[DayRow], orders: List[Order], trades: List[Trade]) -> tuple[List[PeriodRow], List[PeriodRow], PeriodRow]:
+    """Weekly (Monday to Sunday) and monthly overviews plus the Total row. Money columns are differences of
+    rounded running totals, so the rows add up exactly to the Total."""
+    f, base = sim.frame, sim.return_base
+    fees = [_r(v) for v in f["fees_cum"]]
+    capital = _r(sim.cfg.initial_capital)
+
+    def group(key, label) -> List[PeriodRow]:
+        out: List[PeriodRow] = []
+        buckets: dict = {}
+        for i, d in enumerate(f.index):
+            buckets.setdefault(key(d), []).append(i)
+        eq_prev, fee_prev = capital, 0.0
+        for k in sorted(buckets):
+            ix = buckets[k]
+            chunk = [days[i] for i in ix]
+            os_ = [o for o in orders if chunk[0].date <= o.date <= chunk[-1].date]
+            out.append(_period(label(f.index[ix[0]], k), chunk, os_, trades, eq_prev, fee_prev, fees[ix[-1]], base))
+            eq_prev, fee_prev = chunk[-1].net_worth, fees[ix[-1]]
+        return out
+
+    def week_label(d: pd.Timestamp, monday: pd.Timestamp) -> str:
+        y, w, _ = monday.isocalendar()
+        return f"{y} W{w:02d} · {monday.strftime('%d %b')}"
+
+    weeks = group(_monday, week_label)
+    months = group(lambda d: pd.Timestamp(d.year, d.month, 1), lambda d, m: m.strftime("%b %Y"))
+    total = _period("Total", days, orders, trades, capital, 0.0, fees[-1], base)
+    return weeks, months, total
+
+
+def run_checks(sim: Simulation, orders: List[Order], trades: List[Trade], weeks: List[WeekRow],
+               days: Optional[List[DayRow]] = None, overviews: Optional[dict] = None) -> List[Check]:
     """Recompute the key identities from the published rows. Any failure means a number on the page is wrong."""
     f, cfg = sim.frame, sim.cfg
     checks: List[Check] = []
@@ -167,6 +249,13 @@ def run_checks(sim: Simulation, orders: List[Order], trades: List[Trade], weeks:
     add("Weekly net worth changes add up to total profit (rounded to paise)", [sum(w.equity_change for w in weeks) - profit], 1, "total", TOTAL_TOL)
     add("Weekly charges add up to total charges (rounded to paise)", [sum(w.fees for w in weeks) - float(f["fees_cum"].iloc[-1])], 1, "total", TOTAL_TOL)
     add("Weekly realised P&L adds up to total realised (rounded to paise)", [sum(w.realized for w in weeks) - float(f["realized_cum"].iloc[-1])], 1, "total", TOTAL_TOL)
+    if days:
+        add("Daily transactions: every day net worth = cash after + lots held x close",
+            [d.net_worth - (d.cash_after + d.lots * d.close) for d in days], len(days), "days", TOTAL_TOL)
+        add("Daily transactions: day P&L adds up to total profit (rounded to paise)", [sum(d.day_pnl for d in days) - profit], 1, "total", TOTAL_TOL)
+    for name, rows in (overviews or {}).items():
+        add(f"{name}: P&L adds up to total profit (rounded to paise)", [sum(p.pnl for p in rows) - profit], 1, "total", TOTAL_TOL)
+        add(f"{name}: charges add up to total charges (rounded to paise)", [sum(p.charges for p in rows) - float(f["fees_cum"].iloc[-1])], 1, "total", TOTAL_TOL)
     if cfg.limit_to_cash:
         low = float(f["cash"].min())
         checks.append(Check(name="Cash never below 0", ok=low >= -TOL, detail=f"lowest cash {low:,.2f}"))

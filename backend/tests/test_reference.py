@@ -11,7 +11,7 @@ import pytest
 
 from app.appconfig import load_app_config
 from app.domain.engine import EngineConfig, Plan, invert, simulate
-from app.domain.ledger import build_orders, build_trades, build_weeks, run_checks
+from app.domain.ledger import build_days, build_orders, build_periods, build_trades, build_weeks, run_checks
 from app.domain.rules import CustomRulesStrategy, RuleSet
 from app.domain.strategies import build_strategies
 from app.domain.strategies.base import OrderContext
@@ -196,6 +196,25 @@ def test_weeks_run_monday_to_sunday():
     assert [(w.week_start, w.week_end, w.buys) for w in weeks] == [("2024-01-01", "2024-01-05", 1), ("2024-01-08", "2024-01-10", 1)]
 
 
+def test_daily_rows_and_overviews_add_up():
+    """Hand case: buy 1 at 10, hold, sell at 13 the next week. Every day is listed; weeks, months and Total agree."""
+    b = bars_of([10, 11, 12, 11, 10, 13, 13, 12])  # Mon 1 Jan 2024 .. Wed 10 Jan 2024
+    sim = simulate(b, pd.Series([1, 0, 0, 0, -1, 1, 0, -2], index=b.index, dtype=float), EngineConfig())
+    trades, owner = build_trades(sim)
+    orders = build_orders(sim, owner)
+    days = build_days(sim, orders, {"2024-01-01": [1]}, prev_close=None)
+    assert [d.action for d in days] == ["buy", "holding", "holding", "holding", "sell", "buy", "holding", "sell"]
+    assert days[0].rules == [1] and days[0].day_move is None and days[1].day_move == pytest.approx(0.1)
+    assert [d.total_pnl for d in days] == [0, 1, 2, 1, 0, 0, 0, -1]
+    assert days[-1].filled == -1 and days[-1].note == "filled 1 of 2: short selling is off"
+    weeks, months, total = build_periods(sim, days, orders, trades)
+    assert [(w.label, w.days, w.buys, w.sells, w.pnl) for w in weeks] == [("2024 W01 · 01 Jan", 5, 1, 1, 0.0), ("2024 W02 · 08 Jan", 3, 1, 1, -1.0)]
+    assert (weeks[0].up_days, weeks[0].down_days, weeks[0].best_day, weeks[0].worst_day) == (2, 2, 1.0, -1.0)
+    assert weeks[0].trades_closed == 1 and weeks[0].trades_closed_pnl == 0.0
+    assert len(months) == 1 and months[0].pnl == total.pnl == -1.0 and total.days == 8
+    assert (total.lowest_cash, total.highest_cash, total.lots_end, total.trades_closed) == (-13.0, 0.0, 0.0, 2)
+
+
 def test_reasons_show_rule_values():
     b = bars_of([100, 102, 101])
     rules = RuleSet(name="t", rules=[{"action": "buy", "lots": 1, "conditions": [
@@ -211,23 +230,3 @@ def test_affordable_rounding_is_safe():
     assert sim.fills[0].filled in (9, 10) and sim.frame["cash"].iloc[-1] >= -1e-9
     assert not math.isnan(sim.frame["equity"].iloc[-1])
 
-
-def test_rule_can_fire_only_when_it_becomes_true():
-    """Close above 100 on days 2-4 and 6: 'every day' fires 4 times, 'becomes true' only on days 2 and 6."""
-    b = bars_of([99, 101, 102, 103, 98, 104])
-    cond = [{"left": {"kind": "price", "field": "close"}, "op": "gt", "right": {"kind": "value", "value": 100}}]
-    every = CustomRulesStrategy(RuleSet(name="e", rules=[{"action": "buy", "lots": 1, "conditions": cond}]))
-    once = CustomRulesStrategy(RuleSet(name="o", rules=[{"action": "buy", "lots": 1, "when": "becomes_true", "conditions": cond}]))
-    assert every.plan(b, {}, OrderContext(1, False), b.index[0]).values.tolist() == [0, 1, 1, 1, 0, 1]
-    p = once.plan(b, {}, OrderContext(1, False), b.index[0])
-    assert p.values.tolist() == [0, 1, 0, 0, 0, 1]
-    assert p.reasons.iloc[1] == "Rule 1 BUY 1 (first day true): Close 101.00 > 100"
-
-
-def test_becomes_true_uses_history_before_the_window():
-    """Already true the day before the window starts, so it does not fire on the first window day."""
-    b = bars_of([101, 102, 99, 103])
-    rule = [{"action": "buy", "lots": 1, "when": "becomes_true", "conditions": [
-        {"left": {"kind": "price", "field": "close"}, "op": "gt", "right": {"kind": "value", "value": 100}}]}]
-    p = CustomRulesStrategy(RuleSet(name="o", rules=rule)).plan(b, {}, OrderContext(1, False), b.index[1])
-    assert p.values.tolist() == [0, 0, 1]

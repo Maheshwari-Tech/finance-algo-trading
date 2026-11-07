@@ -1,6 +1,6 @@
 import { AUTH_EXPIRED, session } from "../lib/session";
 import type {
-  AuthConfig, BacktestRequest, BacktestResult, BuilderCatalog, LoginResult, StrategyCatalog, SymbolInfo, UiConfig, UploadSpec, UserInfo,
+  AuthConfig, BacktestRequest, BacktestResult, BuilderCatalog, FeedbackItem, LoginResult, PricePage, RuleTestResult, SavedRule, SavedStrategy, TradeRule, StrategyCatalog, SymbolInfo, UiConfig, UploadSpec, UserInfo,
 } from "./types";
 
 export class ApiError extends Error {
@@ -42,6 +42,30 @@ export const api = {
   strategies: () => request<StrategyCatalog>("/api/strategies"),
   ruleBuilder: () => request<BuilderCatalog>("/api/rule-builder"),
   backtest: (req: BacktestRequest) => request<BacktestResult>("/api/backtest", json(req)),
+  ruleTest: (body: { symbol: string; rule: TradeRule; period?: string; start?: string; end?: string }) =>
+    request<RuleTestResult>("/api/rule-test", json(body)),
+  rules: () => request<SavedRule[]>("/api/rules"),
+  createRule: (rule: TradeRule) => request<SavedRule[]>("/api/rules", json(rule)),
+  updateRule: (id: number, rule: TradeRule) => request<SavedRule[]>(`/api/rules/${id}`, { ...json(rule), method: "PUT" }),
+  deleteRule: (id: number) => request<SavedRule[]>(`/api/rules/${id}`, { method: "DELETE" }),
+  saved: () => request<SavedStrategy[]>("/api/saved"),
+  save: (body: { name: string; rule_ids: number[] }) => request<SavedStrategy[]>("/api/saved", json(body)),
+  unsave: (name: string) => request<SavedStrategy[]>(`/api/saved/${encodeURIComponent(name)}`, { method: "DELETE" }),
+
+  sendFeedback: (message: string, category: string, screenshot: File | null) => {
+    const form = new FormData();
+    if (message.trim()) form.set("message", message);
+    if (category) form.set("category", category);
+    if (screenshot) form.set("screenshot", screenshot);
+    return request<{ saved: boolean; id: number }>("/api/feedback", { method: "POST", body: form });
+  },
+  feedback: () => request<FeedbackItem[]>("/api/admin/feedback"),
+  datasetRows: (symbol: string, q: Record<string, string | number | undefined>) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") params.set(k, String(v));
+    return request<PricePage>(`/api/admin/datasets/${encodeURIComponent(symbol)}/rows?${params}`);
+  },
+  feedbackScreenshot: async (id: number) => URL.createObjectURL(await (await send(`/api/admin/feedback/${id}/screenshot`)).blob()),
 
   uploadSpec: () => request<UploadSpec>("/api/admin/upload-spec"),
   upload: (symbol: string, mode: string, file: File) => {

@@ -1,8 +1,10 @@
 import type { BacktestRequest, BuilderCatalog, ParamValues, StrategyCatalog, StrategyInfo, SymbolInfo } from "../api/types";
 import { ui } from "../lib/uiConfig";
+import { onSavedChange, savedNow } from "../lib/savedStrategies";
 import { RuleBuilder } from "./ruleBuilder";
 
 const CUSTOM = "__custom__";
+const SAVED = "__saved__:";
 import { debounce, h } from "../lib/dom";
 
 /** Builds the strategy form. Parameter inputs are generated from the backend's strategy metadata. */
@@ -14,7 +16,8 @@ export class Controls {
 
   constructor(
     private symbols: SymbolInfo[], private catalog: StrategyCatalog, builder: BuilderCatalog,
-    private onChange: (req: BacktestRequest) => void,
+    private onChange: (req: BacktestRequest) => void, private mode: "strategy" | "test" = "strategy",
+    initial?: BacktestRequest,
   ) {
     const d = ui().defaults;
     this.state = {
@@ -23,7 +26,13 @@ export class Controls {
     };
     const start = ui().rule_templates.find((t) => t.name === ui().initial_rule_set) ?? ui().rule_templates[0];
     this.builder = new RuleBuilder(builder, structuredClone(start), (rules) => { this.state.rules = rules; this.emit(); });
+    if (initial) {
+      const { rules, ...rest } = initial;
+      this.state = { ...this.state, ...rest, strategy_id: rules ? CUSTOM : rest.strategy_id };
+      if (rules) this.builder.load(structuredClone(rules));
+    }
     this.render();
+    onSavedChange(() => this.render());
   }
 
   private readonly builder: RuleBuilder;
@@ -43,11 +52,15 @@ export class Controls {
   }
 
   private render() {
-    const L = ui().limits;
     this.el.replaceChildren(
       h("h2", {}, "Strategy"),
       field("Instrument", select(this.symbols.map((s) => ({ value: s.symbol, label: `${s.symbol} · ${s.rows.toLocaleString()} days` })), this.state.symbol, (v) => this.set("symbol", v))),
-      field("Rule", ruleSelect(this.catalog.strategies.map((s) => ({ value: s.id, label: s.name })), this.state.strategy_id, (v) => {
+      field("Rule", ruleSelect(this.catalog.strategies.map((s) => ({ value: s.id, label: s.name })), savedNow().map((r) => r.name), this.state.strategy_id, (v) => {
+        if (v.startsWith(SAVED)) {
+          const r = savedNow().find((x) => x.name === v.slice(SAVED.length));
+          if (r) this.builder.load(structuredClone(r));
+          v = CUSTOM;
+        }
         this.state.strategy_id = v;
         if (v !== CUSTOM) this.state.params = defaults(this.strategy);
         this.render();
@@ -57,6 +70,17 @@ export class Controls {
       ...(this.isCustom ? [] : this.strategy.params).map((p) => field(p.label, p.kind === "select"
         ? select(p.options!, String(this.state.params[p.key]), (v) => this.setParam(p.key, v))
         : numberInput(Number(this.state.params[p.key]), p, (v) => this.setParam(p.key, v)))),
+      ...(this.mode === "strategy" ? this.moneyFields() : this.testFields()),
+      h("h2", { class: "spaced" }, "Period"),
+      this.periodChips(),
+      ...(this.custom ? [h("div", { class: "row2" },
+        field("From", dateInput((v) => this.setRange("start", v))), field("To", dateInput((v) => this.setRange("end", v))))] : []),
+    );
+  }
+
+  private moneyFields(): HTMLElement[] {
+    const L = ui().limits;
+    return [
       h("h2", { class: "spaced" }, "Money & limits"),
       field(`Starting capital (${ui().currency.symbol})`, numberInput(this.state.initial_capital, L.initial_capital, (v) => this.set("initial_capital", v))),
       h("p", { class: "hint tight" }, "Use 0 to see how much money the strategy needs: the dashboard tracks your lowest and highest cash balance."),
@@ -67,11 +91,18 @@ export class Controls {
       toggle("Inverse strategy", "Run the mirror image: every buy becomes a sell of the same size and vice versa.", this.state.invert, (v) => this.set("invert", v)),
       toggle("Apply charges", "Charge a % of the traded value on every buy and sell.", this.state.charges_enabled, (v) => { this.state.charges_enabled = v; this.render(); this.emit(); }),
       ...(this.state.charges_enabled ? [field("Charge per trade (%)", numberInput(this.state.fee_pct, L.fee_pct, (v) => this.set("fee_pct", v)))] : []),
-      h("h2", { class: "spaced" }, "Period"),
-      this.periodChips(),
-      ...(this.custom ? [h("div", { class: "row2" },
-        field("From", dateInput((v) => this.setRange("start", v))), field("To", dateInput((v) => this.setRange("end", v))))] : []),
-    );
+    ];
+  }
+
+  /** Test page: no money. Only what changes which days a strategy acts on. */
+  private testFields(): HTMLElement[] {
+    const L = ui().limits;
+    return [
+      h("h2", { class: "spaced" }, "Signal settings"),
+      ...(this.isCustom ? [] : [field("Lots per position", numberInput(this.state.lots, L.lots, (v) => this.set("lots", Math.round(v))))]),
+      ...(this.isCustom ? [] : [toggle("Allow selling before buying", "Built-in strategies go short on bearish signals only when this is on.", this.state.allow_short, (v) => this.set("allow_short", v))]),
+      toggle("Inverse strategy", "Show the mirror image: every buy becomes a sell of the same size and vice versa.", this.state.invert, (v) => this.set("invert", v)),
+    ];
   }
 
   private setParam(key: string, value: number | string) {
@@ -99,31 +130,32 @@ export class Controls {
 
 const defaults = (s: StrategyInfo): ParamValues => Object.fromEntries(s.params.map((p) => [p.key, p.default]));
 
-const field = (label: string, input: HTMLElement) => h("label", { class: "field" }, h("span", {}, label), input);
+export const field = (label: string, input: HTMLElement) => h("label", { class: "field" }, h("span", {}, label), input);
 
-function select(options: { value: string; label: string }[], value: string, on: (v: string) => void) {
+export function select(options: { value: string; label: string }[], value: string, on: (v: string) => void) {
   return h("select", { on: { change: (e) => on((e.target as HTMLSelectElement).value) } },
     options.map((o) => h("option", { value: o.value, selected: o.value === value }, o.label)));
 }
 
 /** Strategy picker: built-in strategies, then "Build your own..." in its own group, styled apart. */
-function ruleSelect(builtIn: { value: string; label: string }[], value: string, on: (v: string) => void) {
-  const el = h("select", { class: value === CUSTOM ? "rule-select custom-picked" : "rule-select", on: { change: (e) => on((e.target as HTMLSelectElement).value) } },
+function ruleSelect(builtIn: { value: string; label: string }[], saved: string[], value: string, on: (v: string) => void) {
+  return h("select", { class: value === CUSTOM ? "rule-select custom-picked" : "rule-select", on: { change: (e) => on((e.target as HTMLSelectElement).value) } },
     h("optgroup", { label: "Built-in strategies" }, builtIn.map((o) => h("option", { value: o.value, selected: o.value === value }, o.label))),
-    h("optgroup", { label: "Your own rules", class: "custom-group" }, h("option", { value: CUSTOM, selected: value === CUSTOM, class: "custom-option" }, "✎ Build your own...")));
-  return el;
+    h("optgroup", { label: "Your own rules", class: "custom-group" }, h("option", { value: CUSTOM, selected: value === CUSTOM, class: "custom-option" }, "✎ Build your own...")),
+    saved.length > 0 && h("optgroup", { label: "Your saved strategies", class: "custom-group" },
+      saved.map((n) => h("option", { value: SAVED + n, class: "custom-option" }, `★ ${n}`))));
 }
 
-function numberInput(value: number, range: { min?: number; max?: number; step?: number }, on: (v: number) => void) {
+export function numberInput(value: number, range: { min?: number; max?: number; step?: number }, on: (v: number) => void) {
   return h("input", {
     type: "number", value: String(value), min: range.min, max: range.max, step: range.step ?? "any",
     on: { input: (e) => { const v = (e.target as HTMLInputElement).valueAsNumber; if (!Number.isNaN(v)) on(v); } },
   });
 }
 
-const dateInput = (on: (v: string) => void) => h("input", { type: "date", on: { change: (e) => on((e.target as HTMLInputElement).value) } });
+export const dateInput = (on: (v: string) => void) => h("input", { type: "date", on: { change: (e) => on((e.target as HTMLInputElement).value) } });
 
-function toggle(label: string, help: string, value: boolean, on: (v: boolean) => void) {
+export function toggle(label: string, help: string, value: boolean, on: (v: boolean) => void) {
   return h("label", { class: "toggle" },
     h("input", { type: "checkbox", checked: value, on: { change: (e) => on((e.target as HTMLInputElement).checked) } }),
     h("span", { class: "track" }), h("span", { class: "toggle-text" }, h("strong", {}, label), h("small", {}, help)));

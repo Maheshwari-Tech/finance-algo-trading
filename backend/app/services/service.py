@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Dict
+from datetime import date
+from typing import Dict, Optional
 
 import numpy as np
 
@@ -9,10 +10,20 @@ from ..appconfig import AnalysisConfig
 from ..data.repository import PriceRepository
 from ..domain import metrics as M
 from ..domain.engine import EngineConfig, Plan, Simulation, invert, simulate
-from ..domain.ledger import TOL, build_orders, build_trades, build_weeks, run_checks
+from ..domain.ledger import TOL, build_days, build_orders, build_periods, build_trades, build_weeks, run_checks
 from ..domain.periods import resolve_period
-from ..domain.results import BacktestResult, FeePoint, FeeSensitivity, MirrorCheck, Series
-from ..domain.rules import CustomRulesStrategy
+from ..domain.results import (
+    BacktestResult,
+    FeePoint,
+    FeeSensitivity,
+    MirrorCheck,
+    RuleEvent,
+    RuleLegend,
+    RuleSummary,
+    RuleTestResult,
+    Series,
+)
+from ..domain.rules import CustomRulesStrategy, RuleSet, TradeRule, rule_sentence
 from ..domain.spec import BacktestSpec
 from ..domain.strategies.base import OrderContext, Strategy
 from ..domain.windows import analyze_windows
@@ -45,6 +56,16 @@ class BacktestService:
         trades, owner = build_trades(sim)
         orders = build_orders(sim, owner)
         weekly = build_weeks(sim, orders)
+        fired: dict = {}
+        legend = []
+        if isinstance(strategy, CustomRulesStrategy):
+            for d, n, _rule, _why in strategy.events(bars, s, e):
+                fired.setdefault(d.strftime("%Y-%m-%d"), []).append(n)
+            legend = [RuleLegend(rule=n, sentence=rule_sentence(r)) for n, r in enumerate(strategy.rules.rules, 1)]
+        before = bars.loc[:s]["close"]
+        prev_close = float(before.iloc[-2]) if len(before) > 1 and before.index[-1] == window.index[0] else None
+        daily = build_days(sim, orders, fired, prev_close)
+        weeks, months, total = build_periods(sim, daily, orders, trades)
         monthly = M.monthly_returns(sim.frame["ret"])
         f = sim.frame
         name = f"Inverse of {strategy.name}" if spec.invert else strategy.name
@@ -63,12 +84,30 @@ class BacktestService:
             windows=analyze_windows(f["equity"].to_numpy(), sim.return_base, self._cfg),
             fees=self._fee_sensitivity(sim, window, plan),
             return_histogram=self._histogram(f["ret"].to_numpy()),
-            orders=orders, weekly=weekly, checks=run_checks(sim, orders, trades, weekly),
+            orders=orders, weekly=weekly, daily=daily, weeks=weeks, months=months, period_total=total, rule_legend=legend,
+            checks=run_checks(sim, orders, trades, weekly, daily, {"Weekly overview": weeks, "Monthly overview": months}),
             mirror=self._mirror(sim, window, mirror_plan), inverted=spec.invert,
             settings={"initial_capital": cfg.initial_capital, "fee_pct": cfg.fee_pct, "allow_short": cfg.allow_short,
                       "max_position": cfg.max_position, "limit_to_cash": cfg.limit_to_cash, "lots": spec.lots,
                       "fill_price": "close of the signal day", "pnl_method": "average cost", "week": "Monday to Sunday"},
         )
+
+    def test_rule(self, symbol: str, rule: TradeRule, period: Optional[str], start: Optional[date], end: Optional[date]) -> RuleTestResult:
+        """Every day one rule's conditions are met in the period, with the values compared. No money involved."""
+        bars = self._repo.load(symbol)
+        s, e = resolve_period(bars.index, period, start, end, self._cfg.periods)
+        window = bars.loc[s:e]
+        close = window["close"]
+        fmt = lambda d: d.strftime("%Y-%m-%d")  # noqa: E731
+        strategy = CustomRulesStrategy(RuleSet(name=rule.name or "Rule", rules=[rule]))
+        events = [RuleEvent(date=fmt(d), close=round(float(close.loc[d]), 4), action=r.action, lots=r.lots, rule=n, reason=why)
+                  for d, n, r, why in strategy.events(bars, s, e)]
+        return RuleTestResult(
+            symbol=symbol.upper(), strategy_name=rule.name or "Unsaved rule", start=fmt(window.index[0]), end=fmt(window.index[-1]),
+            bars=len(window), dates=[fmt(d) for d in window.index], close=close.round(4).tolist(), events=events,
+            rules=[RuleSummary(rule=1, sentence=rule_sentence(rule), days=len(events))],
+            note="Only this rule, exactly as written: every day its conditions are met it places its order. "
+                 "No money, holdings, charges, limits or other rules are applied.")
 
     def _mirror(self, sim: Simulation, window, mirror_plan: Plan) -> MirrorCheck:
         other = simulate(window, mirror_plan, sim.cfg)

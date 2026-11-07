@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
 
-from ..domain.rules import RuleSet
+from ..domain.rules import RuleSet, TradeRule
 from ..domain.spec import BacktestSpec
 
 
@@ -59,3 +59,11 @@ class UserOut(BaseModel):
 class LoginOut(UserOut):
     token: str
     expires_at: str
+
+
+class RuleTestRequest(BaseModel):
+    symbol: str
+    rule: TradeRule
+    period: Optional[str] = Field("1Y", description="1W, 1M, 3M, 6M, YTD, 1Y, 2Y, 3Y, 5Y, MAX")
+    start: Optional[date] = None
+    end: Optional[date] = None

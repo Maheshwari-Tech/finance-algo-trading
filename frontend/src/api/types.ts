@@ -54,6 +54,18 @@ export interface WeekRow {
   buy_value: number; sell_value: number; fees: number; realized: number; position_end: number; avg_price_end: number; close_end: number;
   cash_end: number; unrealized_end: number; equity_end: number; equity_change: number;
 }
+export interface DayRow {
+  date: string; close: number; day_move: number | null; rules: number[]; action: "buy" | "sell" | "skipped" | "holding" | "short" | "flat";
+  requested: number; filled: number; trade_value: number; fee: number; cash_after: number; lots: number; holdings: number;
+  net_worth: number; day_pnl: number; total_pnl: number; order_no: number | null; note: string; reason: string;
+}
+export interface PeriodRow {
+  label: string; start: string; end: string; days: number; up_days: number; down_days: number;
+  net_worth_start: number; net_worth_end: number; pnl: number; return_pct: number;
+  buys: number; bought_lots: number; sells: number; sold_lots: number; skipped: number; charges: number;
+  lowest_cash: number; highest_cash: number; cash_end: number; lots_end: number; best_day: number; worst_day: number;
+  trades_closed: number; trades_closed_pnl: number;
+}
 export interface Check { name: string; ok: boolean; detail: string }
 export interface MirrorCheck { exact: boolean; strategy_profit: number; inverse_profit: number; total: number; charges: number; ok: boolean; note: string }
 export interface WindowStat {
@@ -75,19 +87,21 @@ export interface BacktestResult {
   start: string; end: string; bars: number; metrics: Metrics; series: Series; trades: Trade[];
   monthly: { year: number; month: number; value: number }[];
   windows: WindowAnalysis; fees: FeeSensitivity; return_histogram: { edges: number[]; counts: number[] };
-  orders: Order[]; weekly: WeekRow[]; checks: Check[]; mirror: MirrorCheck; inverted: boolean;
+  orders: Order[]; weekly: WeekRow[]; checks: Check[];
+  daily: DayRow[]; weeks: PeriodRow[]; months: PeriodRow[]; period_total: PeriodRow | null; rule_legend: { rule: number; sentence: string }[]; mirror: MirrorCheck; inverted: boolean;
   settings: Record<string, string | number | boolean>;
 }
 
 export interface OperandSpec { kind: string; period?: number; value?: number; field?: string }
 export interface Condition { left: OperandSpec; op: string; right: OperandSpec }
-export interface TradeRule { action: "buy" | "sell"; lots: number; match: "all" | "any"; when?: "every_day" | "becomes_true"; conditions: Condition[] }
+export interface TradeRule { id?: number | null; name?: string | null; action: "buy" | "sell"; lots: number; match: "all" | "any"; conditions: Condition[] }
+export interface SavedRule extends TradeRule { id: number; name: string; used_by: string[] }
+export interface SavedStrategy { name: string; rule_ids: number[]; rules: TradeRule[]; missing: number[] }
 export interface RuleSet { name: string; rules: TradeRule[] }
 
-export interface OperandInfo { kind: string; label: string; uses_period: boolean; default_period: number | null; uses_field: boolean; uses_value: boolean }
+export interface OperandInfo { kind: string; label: string; help?: string; uses_period: boolean; default_period: number | null; uses_field: boolean; uses_value: boolean }
 export interface BuilderCatalog {
   operands: OperandInfo[]; price_fields: { value: string; label: string }[]; operators: { value: string; label: string }[];
-  when: { value: string; label: string }[];
   limits: { period: Range; lots: Range; rules: number; conditions_per_rule: number };
 }
 export interface Range { min: number; max: number; step?: number }
@@ -110,3 +124,15 @@ export interface AuthConfig { country_code: string; mode: "dev" | "prod"; otp_le
 export interface UserInfo { mobile: string; role: "admin" | "trader" }
 export interface LoginResult extends UserInfo { token: string; expires_at: string }
 export interface UploadSpec { columns: string[]; min_rows: number; max_upload_mb: number }
+
+export interface RuleEvent { date: string; close: number; action: "buy" | "sell"; lots: number; rule: number; reason: string }
+export interface RuleSummary { rule: number; sentence: string; days: number }
+export interface RuleTestResult {
+  symbol: string; strategy_name: string; start: string; end: string; bars: number; dates: string[]; close: number[];
+  events: RuleEvent[]; rules: RuleSummary[]; note: string;
+}
+
+export interface FeedbackItem { id: number; mobile: string; created_at: string; category: string | null; message: string | null; has_screenshot: boolean }
+
+export interface PriceRow { date: string; open: number; high: number; low: number; close: number }
+export interface PricePage { symbol: string; total: number; page: number; size: number; pages: number; rows: PriceRow[] }

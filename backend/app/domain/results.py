@@ -75,6 +75,61 @@ class WeekRow(BaseModel):
     equity_change: float
 
 
+class DayRow(BaseModel):
+    """One trading day: what the rules said, what was done, and where the account stood at the close."""
+    date: str
+    close: float
+    day_move: Optional[float] = None  # close vs previous close, fraction (None on the first day of the data)
+    rules: List[int] = []  # rule numbers whose conditions were true that day (rule-built strategies)
+    action: str  # "buy" | "sell" (an order filled), "skipped" (asked, nothing filled), "holding", "short", "flat"
+    requested: float = 0  # signed lots asked for
+    filled: float = 0  # signed lots traded
+    trade_value: float = 0  # signed: + money paid for a buy, - money received for a sell
+    fee: float = 0
+    cash_after: float
+    lots: float  # lots held at the close (negative = short)
+    holdings: float  # lots x close
+    net_worth: float  # cash + holdings
+    day_pnl: float  # net worth change vs the previous day
+    total_pnl: float  # net worth - starting capital
+    order_no: Optional[int] = None
+    note: str = ""
+    reason: str = ""
+
+
+class PeriodRow(BaseModel):
+    """A week (Monday to Sunday) or calendar month, or the whole run (the Total row)."""
+    label: str  # "2025 W45 · 03 Nov", "Nov 2025", "Total"
+    start: str
+    end: str
+    days: int
+    up_days: int  # days net worth rose
+    down_days: int  # days net worth fell
+    net_worth_start: float
+    net_worth_end: float
+    pnl: float  # net worth change (rounded so the rows add up to the total)
+    return_pct: float  # pnl / money the run measures returns against (peak money in positions)
+    buys: int
+    bought_lots: float
+    sells: int
+    sold_lots: float
+    skipped: int  # orders asked for but nothing filled
+    charges: float
+    lowest_cash: float
+    highest_cash: float
+    cash_end: float
+    lots_end: float
+    best_day: float
+    worst_day: float
+    trades_closed: int
+    trades_closed_pnl: float
+
+
+class RuleLegend(BaseModel):
+    rule: int
+    sentence: str
+
+
 class Check(BaseModel):
     name: str
     ok: bool
@@ -239,7 +294,41 @@ class BacktestResult(BaseModel):
     return_histogram: Dict[str, List[float]]
     orders: List[Order]
     weekly: List[WeekRow]
+    daily: List[DayRow] = []
+    weeks: List[PeriodRow] = []  # weekly overview
+    months: List[PeriodRow] = []  # monthly overview
+    period_total: Optional[PeriodRow] = None
+    rule_legend: List[RuleLegend] = []
     checks: List[Check]
     mirror: MirrorCheck
     inverted: bool
     settings: Dict[str, object]
+
+
+class RuleEvent(BaseModel):
+    date: str
+    close: float
+    action: str  # "buy" | "sell"
+    lots: float
+    rule: int  # rule number (0 for built-in strategies)
+    reason: str
+
+
+class RuleSummary(BaseModel):
+    rule: int
+    sentence: str
+    days: int  # days it fired in the period
+
+
+class RuleTestResult(BaseModel):
+    """What a strategy's rules would do on each day, before any money, holdings or limits are applied."""
+    symbol: str
+    strategy_name: str
+    start: str
+    end: str
+    bars: int
+    dates: List[str]
+    close: List[float]
+    events: List[RuleEvent]
+    rules: List[RuleSummary]
+    note: str

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
-from typing import List
+from datetime import UTC, date, datetime
+from typing import List, Optional, Tuple
 
 import pandas as pd
 from sqlalchemy import delete, func, select
@@ -55,6 +55,29 @@ class SqlPriceRepository(PriceRepository):
         df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close"])
         df["date"] = pd.to_datetime(df["date"])
         return df.set_index("date")
+
+    def rows(self, symbol: str, start: Optional[date] = None, end: Optional[date] = None, min_close: Optional[float] = None,
+             max_close: Optional[float] = None, newest_first: bool = True, offset: int = 0, limit: int = 20) -> Tuple[int, List[dict]]:
+        """One page of an instrument's stored prices, filtered. Returns (matching row count, rows)."""
+        symbol = self.clean_symbol(symbol)
+        where = [price_bars.c.symbol == symbol]
+        if start:
+            where.append(price_bars.c.date >= start)
+        if end:
+            where.append(price_bars.c.date <= end)
+        if min_close is not None:
+            where.append(price_bars.c.close >= min_close)
+        if max_close is not None:
+            where.append(price_bars.c.close <= max_close)
+        with self._engine.connect() as conn:
+            if conn.execute(select(instruments.c.symbol).where(instruments.c.symbol == symbol)).first() is None:
+                raise SymbolNotFound(symbol)
+            total = conn.execute(select(func.count()).select_from(price_bars).where(*where)).scalar_one()
+            order = price_bars.c.date.desc() if newest_first else price_bars.c.date.asc()
+            q = (select(price_bars.c.date, price_bars.c.open, price_bars.c.high, price_bars.c.low, price_bars.c.close)
+                 .where(*where).order_by(order).offset(offset).limit(limit))
+            rows = [{"date": str(d)[:10], "open": o, "high": hi, "low": lo, "close": c} for d, o, hi, lo, c in conn.execute(q)]
+        return int(total), rows
 
     def save(self, symbol: str, bars: pd.DataFrame, merge: bool, updated_by: str) -> SymbolInfo:
         symbol = self.clean_symbol(symbol)

@@ -97,23 +97,14 @@ class Condition(BaseModel):
         return OPERATORS[self.op](a, b).fillna(False) & a.notna() & b.notna()
 
 
-WHEN = {"every_day", "becomes_true"}
-
-
 class TradeRule(BaseModel):
     """One order instruction: <action> <lots> when <conditions>. No conditions means every day."""
+    id: Optional[int] = None  # the saved rule this came from, if any
+    name: Optional[str] = Field(None, max_length=60)
     action: str
     lots: int = Field(1, ge=1, le=10_000)
     match: str = "all"
-    when: str = "every_day"  # "every_day": act on every day the conditions hold; "becomes_true": only on the first such day
     conditions: List[Condition] = Field(default_factory=list, max_length=8)
-
-    @field_validator("when")
-    @classmethod
-    def _when(cls, v: str) -> str:
-        if v not in WHEN:
-            raise ValueError(f"when must be one of {sorted(WHEN)}")
-        return v
 
     @field_validator("action")
     @classmethod
@@ -129,19 +120,12 @@ class TradeRule(BaseModel):
             raise ValueError("match must be 'all' or 'any'")
         return v
 
-    def holds(self, bars: Bars) -> pd.Series:
-        """True on every day the conditions are met."""
+    def fires(self, bars: Bars) -> pd.Series:
+        """Every day the conditions are met, this rule places its order."""
         if not self.conditions:
             return pd.Series(True, index=bars.index)
         hits = pd.concat([c.evaluate(bars) for c in self.conditions], axis=1)
         return hits.all(axis=1) if self.match == "all" else hits.any(axis=1)
-
-    def fires(self, bars: Bars) -> pd.Series:
-        """Days this rule places its order. Evaluated on the full history, so 'becomes true' is known at the window start."""
-        held = self.holds(bars)
-        if self.when == "becomes_true":
-            return held & ~held.shift(1, fill_value=False)
-        return held
 
     @property
     def signed_lots(self) -> int:
@@ -171,32 +155,49 @@ class CustomRulesStrategy(Strategy):
             total += rule.fires(bars).astype(float) * rule.signed_lots
         return total.loc[start:]
 
-    def plan(self, bars: Bars, params, ctx, start: pd.Timestamp) -> Plan:
-        """Net lots to buy/sell per bar, with the rules that fired and the values they compared."""
-        window = bars.index[bars.index >= start]
-        total = pd.Series(0.0, index=window)
-        texts = {d: [] for d in window}
+    def events(self, bars: Bars, start: pd.Timestamp, end: Optional[pd.Timestamp] = None) -> List[tuple]:
+        """(date, rule number, rule, explanation) for every day a rule fires in [start, end], in date order."""
+        window = bars.index[(bars.index >= start) & ((bars.index <= end) if end is not None else True)]
+        out = []
         for n, rule in enumerate(self.rules.rules, 1):
             fired = rule.fires(bars).loc[window]
             if not fired.any():
                 continue
             evaluated = [(c, c.left.evaluate(bars), c.right.evaluate(bars)) for c in rule.conditions]
-            total += fired.astype(float) * rule.signed_lots
             joiner = " AND " if rule.match == "all" else " OR "
             for d in fired.index[fired.to_numpy()]:
                 if evaluated:
                     i = bars.index.get_loc(d)
-                    parts = [_explain(c, a, b, i, rule.match == "any") for c, a, b in evaluated]
-                    why = joiner.join(p for p in parts if p)
+                    why = joiner.join(p for p in (_explain(c, a, b, i, rule.match == "any") for c, a, b in evaluated) if p)
                 else:
                     why = "no conditions (every day)"
-                first = " (first day true)" if rule.when == "becomes_true" else ""
-                texts[d].append(f"Rule {n} {rule.action.upper()} {rule.lots}{first}: {why}")
+                out.append((d, n, rule, why))
+        return sorted(out, key=lambda e: (e[0], e[1]))
+
+    def plan(self, bars: Bars, params, ctx, start: pd.Timestamp) -> Plan:
+        """Net lots to buy/sell per bar, with the rules that fired and the values they compared."""
+        window = bars.index[bars.index >= start]
+        total = pd.Series(0.0, index=window)
+        texts = {d: [] for d in window}
+        for d, n, rule, why in self.events(bars, start):
+            total.loc[d] += rule.signed_lots
+            label = f"Rule {n} ({rule.name})" if rule.name else f"Rule {n}"
+            texts[d].append(f"{label} {rule.action.upper()} {rule.lots}: {why}")
         reasons = pd.Series(["; ".join(texts[d]) for d in window], index=window, dtype=object)
         return Plan("delta", total, reasons)
 
 
-OP_TEXT = {"gt": ">", "lt": "<", "crosses_above": "crossed above", "crosses_below": "crossed below"}
+def rule_sentence(rule: TradeRule) -> str:
+    """'Buy 1 lot when 1-day change % > 1'."""
+    head = f"{rule.action.capitalize()} {rule.lots} lot{'s' if rule.lots != 1 else ''}"
+    if not rule.conditions:
+        return f"{head} every day"
+    joiner = " and " if rule.match == "all" else " or "
+    conds = joiner.join(f"{operand_label(c.left)} {OP_TEXT[c.op]} {operand_label(c.right)}" for c in rule.conditions)
+    return f"{head} when {conds}"
+
+
+OP_TEXT = {"gt": ">", "lt": "<", "crosses_above": "crosses above", "crosses_below": "crosses below"}
 
 
 def operand_label(o: OperandSpec) -> str:
@@ -232,11 +233,10 @@ def builder_catalog(cfg: dict) -> dict:
     if set(labels) != set(OPERANDS) or set(ops) != set(OPERATORS):
         raise ConfigError("config/rule_builder.json operands/operators do not match the implementation")
     return {
-        "operands": [{"kind": o.kind, "label": labels[o.kind]["label"], "uses_period": o.uses_period,
+        "operands": [{"kind": o.kind, "label": labels[o.kind]["label"], "help": labels[o.kind].get("help", ""), "uses_period": o.uses_period,
                       "default_period": labels[o.kind].get("default_period"), "uses_field": o.uses_field, "uses_value": o.uses_value}
                      for o in OPERANDS.values()],
         "price_fields": [f for f in cfg["price_fields"] if f["value"] in PRICE_FIELDS],
         "operators": [{"value": k, "label": v} for k, v in ops.items()],
-        "when": [w for w in cfg["when"] if w["value"] in WHEN],
         "limits": cfg["limits"],
     }
