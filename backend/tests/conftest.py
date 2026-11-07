@@ -47,7 +47,8 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture
 def config():
-    return load_app_config()
+    cfg = load_app_config()
+    return replace(cfg, data=replace(cfg.data, default_dataset=None))  # most tests start from an empty database
 
 
 @pytest.fixture

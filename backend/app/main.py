@@ -15,6 +15,7 @@ from .auth.service import AuthService
 from .config import ConfigError, Settings
 from .data.feedback import FeedbackStore
 from .data.saved import SavedLibrary
+from .data.seed import seed_default_dataset
 from .data.sql_repository import SqlPriceRepository
 from .db import init_schema, make_engine
 from .domain.strategies import build_strategies
@@ -66,6 +67,7 @@ def create_app(settings: Optional[Settings] = None, config: Optional[AppConfig] 
     docs = {} if not settings.is_production else {"docs_url": None, "redoc_url": None, "openapi_url": None}
     app = FastAPI(title="Strategic Trader", version="2.0.0", description=API_DESCRIPTION, openapi_tags=API_TAGS, **docs)
     repo = SqlPriceRepository(engine, config.data.symbol_pattern)
+    seed_default_dataset(repo, config)
     strategies = build_strategies(config.strategies)
     app.state.settings, app.state.config, app.state.repo, app.state.strategies = settings, config, repo, strategies
     app.state.engine = engine

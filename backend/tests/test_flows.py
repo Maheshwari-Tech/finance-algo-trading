@@ -88,7 +88,8 @@ def settings(tmp_path):
 @pytest.fixture()
 def config():
     cfg = load_app_config()
-    return replace(cfg, auth=replace(cfg.auth, otp_cooldown_seconds=0, otp_max_attempts=3, otp_hourly_limit=50))
+    return replace(cfg, data=replace(cfg.data, default_dataset=None),
+                   auth=replace(cfg.auth, otp_cooldown_seconds=0, otp_max_attempts=3, otp_hourly_limit=50))
 
 
 def login(client, mobile, otp="123456"):

@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .config import ROOT, ConfigError
 
@@ -41,6 +41,7 @@ class DataConfig:
     csv: CsvConfig
     symbol_pattern: str
     template_file: str
+    default_dataset: Optional[Dict[str, str]] = None  # {"symbol", "file" in examples_dir}; loaded when the database has no prices
 
 
 @dataclass(frozen=True)
@@ -70,7 +71,7 @@ class AppConfig:
 def _read(directory: Path, name: str) -> Any:
     path = directory / name
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ConfigError(f"Missing config file {path}")
     except json.JSONDecodeError as exc:
@@ -83,7 +84,8 @@ def load_app_config() -> AppConfig:
         data = _read(directory, "data.json")
         return AppConfig(
             analysis=AnalysisConfig(**_read(directory, "analysis.json")),
-            data=DataConfig(csv=CsvConfig(**data["csv"]), symbol_pattern=data["symbol_pattern"], template_file=data["template_file"]),
+            data=DataConfig(csv=CsvConfig(**data["csv"]), symbol_pattern=data["symbol_pattern"], template_file=data["template_file"],
+                            default_dataset=data.get("default_dataset")),
             auth=AuthConfig(**_read(directory, "auth.json")),
             strategies=_read(directory, "strategies.json"),
             rule_builder=_read(directory, "rule_builder.json"),

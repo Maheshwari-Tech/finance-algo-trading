@@ -52,7 +52,7 @@ export TOKEN=$(./scripts/api-login.sh --quiet)
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8123/api/symbols
 ```
 
-**Load prices:** sign in as admin → Admin → upload a CSV with `date, open, high, low, close` (template on that page). Replace or merge by date. The site only ever shows results computed from prices you upload.
+**Load prices:** on first start, when the database has no prices, the bundled NIFTY 50 daily history (`examples/nifty50.csv`, ~5 years from Yahoo Finance `^NSEI`, unadjusted) is loaded automatically, so every user sees it after signing in. To use other data, sign in as admin → Admin → upload a CSV with `date, open, high, low, close` (template on that page). Replace or merge by date. Change or turn off the default in `config/data.json` (`default_dataset`; set it to `null` to start empty). It is only loaded when no instrument exists, so existing data is never overwritten.
 
 **Run the checks yourself:**
 ```bash

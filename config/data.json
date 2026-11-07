@@ -6,5 +6,6 @@
     "max_upload_mb": 20
   },
   "symbol_pattern": "^[A-Z0-9._&-]{1,20}$",
-  "template_file": "prices_template.csv"
+  "template_file": "prices_template.csv",
+  "default_dataset": {"symbol": "NIFTY50", "file": "nifty50.csv"}
 }
